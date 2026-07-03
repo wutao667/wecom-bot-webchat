@@ -51,22 +51,35 @@ function getContacts(botId, userId) {
   const bot = db.prepare('SELECT id FROM bots WHERE id = ? AND user_id = ?').get(botId, userId);
   if (!bot) return [];
 
-  // Get distinct contacts from messages, with their last message
+  // Get distinct contacts from messages, with their last message.
+  // NOTE: SQLite does not allow referencing a column alias in the same query's
+  // GROUP BY or subquery WHERE, so we compute the contact_user in a subquery
+  // and group on the original expression.
   const contacts = db.prepare(`
     SELECT
-      CASE WHEN m.direction = 'incoming' THEN m.from_user ELSE m.to_user END as userid,
-      MAX(m.created_at) as last_time,
-      (SELECT content FROM messages WHERE bot_id = ? AND (from_user = userid OR to_user = userid) ORDER BY created_at DESC LIMIT 1) as last_message,
-      (SELECT COUNT(*) FROM messages WHERE bot_id = ? AND direction = 'incoming' AND from_user = userid AND status = 'sent') as unread_count
-    FROM messages m
-    WHERE m.bot_id = ?
-    GROUP BY userid
+      contact_user,
+      MAX(last_time) as last_time,
+      (SELECT content FROM messages
+       WHERE bot_id = ? AND (from_user = contact_user OR to_user = contact_user)
+       ORDER BY created_at DESC LIMIT 1) as last_message,
+      (SELECT COUNT(*) FROM messages
+       WHERE bot_id = ? AND direction = 'incoming' AND from_user = contact_user
+       AND status = 'sent') as unread_count
+    FROM (
+      SELECT from_user AS contact_user, created_at AS last_time
+      FROM messages WHERE bot_id = ? AND direction = 'incoming'
+      UNION
+      SELECT to_user AS contact_user, created_at AS last_time
+      FROM messages WHERE bot_id = ? AND direction = 'outgoing' AND to_user != ''
+    ) sub
+    WHERE contact_user != '' AND contact_user IS NOT NULL
+    GROUP BY contact_user
     ORDER BY last_time DESC
-  `).all(botId, botId, botId);
+  `).all(botId, botId, botId, botId);
 
   return contacts.map(c => ({
-    userid: c.userid,
-    name: c.userid,
+    userid: c.contact_user,
+    name: c.contact_user,
     last_message: c.last_message ? (c.last_message.length > 100 ? c.last_message.slice(0, 100) + '...' : c.last_message) : '',
     unread_count: c.unread_count || 0,
     last_time: c.last_time,
