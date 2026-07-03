@@ -1,0 +1,24 @@
+{
+  "name": "wecom-bot-webchat-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WeCom Bot WebChat - Server",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "db:migrate": "node db/migrate.js",
+    "build": "echo 'Server build not required'"
+  },
+  "dependencies": {
+    "@wecom/aibot-node-sdk": "^1.0.7",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.11.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "socket.io": "^4.8.1"
+  }
+}

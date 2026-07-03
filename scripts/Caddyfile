@@ -1,0 +1,15 @@
+# WeCom Bot WebChat - Caddy 反向代理配置（参考）
+# 由杨戬负责部署到生产环境
+# 域名：chat.zeaho.site
+
+chat.zeaho.site {
+    reverse_proxy 127.0.0.1:3001 {
+        # 支持 WebSocket 升级（socket.io）
+        header_up Upgrade {http.request.header.Upgrade}
+        header_up Connection {http.request.header.Connection}
+    }
+
+    log {
+        output file /var/log/caddy/wecom-bot-webchat.log
+    }
+}
