@@ -68,6 +68,34 @@ router.put('/:id', (req, res, next) => {
   }
 });
 
+// POST /api/bots/:id/reconnect — Manually reconnect a bot
+router.post('/:id/reconnect', (req, res, next) => {
+  try {
+    const botId = parseInt(req.params.id, 10);
+    const bot = botService.getBotById(botId, req.user.id);
+    if (!bot) {
+      throw Object.assign(new Error('Bot not found'), { status: 404 });
+    }
+
+    // Disconnect existing connection (if any), then reconnect using the latest stored secret
+    try {
+      const pool = req.app.get('botPool');
+      if (pool) {
+        pool.disconnectBot(botId);
+        pool.connectBot(bot).catch(err => {
+          console.error(`[routes/bots] Manual reconnect failed for bot ${botId}:`, err.message);
+        });
+      }
+    } catch (poolErr) {
+      console.error('[routes/bots] Error reconnecting bot:', poolErr.message);
+    }
+
+    res.json({ success: true, data: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/bots/:id — Delete bot
 router.delete('/:id', (req, res, next) => {
   try {

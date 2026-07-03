@@ -15,3 +15,7 @@ export async function updateBot(id, updates) {
 export async function deleteBot(id) {
   return client.delete(`/bots/${id}`);
 }
+
+export async function reconnectBot(id) {
+  return client.post(`/bots/${id}/reconnect`);
+}

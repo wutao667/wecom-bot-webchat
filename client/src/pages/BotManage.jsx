@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Modal, Form, Input, Space, Tag, Popconfirm, message, Typography, Empty } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, LinkOutlined, KeyOutlined } from '@ant-design/icons';
-import { getBots, createBot, updateBot, deleteBot } from '../api/bots';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, RobotOutlined, LinkOutlined, KeyOutlined } from '@ant-design/icons';
+import { getBots, createBot, updateBot, deleteBot, reconnectBot } from '../api/bots';
 
 // Helpers
 const statusColor = (status) => {
@@ -80,6 +80,20 @@ export default function BotManage({ user, onBotsChange }) {
     }
   };
 
+  const handleReconnect = async (id) => {
+    const hide = message.loading('正在重连...', 0);
+    try {
+      await reconnectBot(id);
+      hide();
+      message.success('重连成功');
+      loadBots();
+    } catch (err) {
+      hide();
+      const errMsg = err.response?.data?.error || '重连失败';
+      message.error(errMsg);
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
@@ -146,11 +160,14 @@ export default function BotManage({ user, onBotsChange }) {
     {
       title: '操作',
       key: 'actions',
-      width: 160,
+      width: 220,
       render: (_, record) => (
         <Space>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
+          </Button>
+          <Button type="link" size="small" icon={<ReloadOutlined />} onClick={() => handleReconnect(record.id)}>
+            重连
           </Button>
           <Popconfirm title="确定删除此Bot？" description="删除后无法恢复" onConfirm={() => handleDelete(record.id)}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
@@ -236,6 +253,13 @@ export default function BotManage({ user, onBotsChange }) {
                 onClick={() => handleEdit(bot)}
               >
                 编辑
+              </Button>
+              <Button
+                block
+                icon={<ReloadOutlined />}
+                onClick={() => handleReconnect(bot.id)}
+              >
+                重连
               </Button>
               <Popconfirm
                 title="确定删除此Bot？"
