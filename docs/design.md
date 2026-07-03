@@ -1,6 +1,6 @@
 # WeCom Bot WebChat — 设计方案文档
 
-> 版本：v1.0  
+> 版本：v2.0（WebSocket 长连接方案）  
 > 最后更新：2026-07-03  
 > 项目仓库：https://github.com/wutao667/wecom-bot-webchat
 
@@ -12,9 +12,9 @@
 2. [需求分析](#2-需求分析)
 3. [技术选型与理由](#3-技术选型与理由)
 4. [系统架构](#4-系统架构)
-5. [数据库设计](#5-数据库设计)
-6. [API 接口设计](#6-api-接口设计)
-7. [企业微信回调处理流程](#7-企业微信回调处理流程)
+5. [企业微信智能机器人 WebSocket 协议](#5-企业微信智能机器人-websocket-协议)
+6. [数据库设计](#6-数据库设计)
+7. [API 接口设计](#7-api-接口设计)
 8. [WebSocket 实时通信设计](#8-websocket-实时通信设计)
 9. [前端页面结构](#9-前端页面结构)
 10. [项目目录结构](#10-项目目录结构)
@@ -28,13 +28,23 @@
 
 ### 1.1 项目名称
 
-**WeCom Bot WebChat** — 企业微信机器人网页版聊天工具
+**WeCom Bot WebChat** — 企业微信智能机器人网页版聊天工具
 
 ### 1.2 项目目标
 
-构建一个 Web 应用，支持用户绑定企业微信自建应用（Agent），实现在浏览器中与企业微信用户进行双向实时消息通信。最终达到类似"网页版企业微信"的体验。
+构建一个 Web 应用，支持用户绑定企业微信智能机器人（Smart Bot），通过 **WebSocket 长连接** 实现网页端与企业微信用户之间的双向实时消息通信。对标 OpenClaw 中企业微信 bot 的绑定方式（botId + secret）。
 
-### 1.3 核心价值
+### 1.3 核心理念
+
+与传统的"自建应用（Agent）+ URL 回调"方案不同，本项目采用**智能机器人 + WebSocket 长连接**方案：
+
+- 配置极简：只需 **botId + secret** 两个参数（与 OpenClaw 一致）
+- 无需暴露公网回调 URL
+- 无需处理 AES 加解密、XML 解析、签名验证
+- 一条 WebSocket 连接即可完成收发双向通信
+- 企业微信官方 SDK 处理连接管理、心跳保活、自动重连
+
+### 1.4 核心价值
 
 | 场景 | 说明 |
 |------|------|
@@ -53,38 +63,41 @@
 
 | 编号 | 功能 | 优先级 | 说明 |
 |------|------|--------|------|
-| F-01 | 添加 Bot | P0 | 输入 corpid, agentid, secret, token, encodingAESKey |
-| F-02 | 验证 Bot 联通性 | P0 | 通过回调 URL 验证确认配置正确 |
-| F-03 | 编辑 Bot | P1 | 修改已绑定的 Bot 配置 |
-| F-04 | 删除 Bot | P1 | 解除 Bot 绑定 |
-| F-05 | 查看 Bot 列表 | P0 | 所有已绑定 Bot 的概览 |
-| F-06 | Bot 状态监控 | P2 | 显示在线/离线/异常状态 |
+| F-01 | 添加 Bot | P0 | 输入 **botId + secret**（与 OpenClaw 配置一致） |
+| F-02 | 验证 Bot 联通性 | P0 | 通过 WebSocket 连接测试确认配置正确 |
+| F-03 | 测试发送消息 | P1 | 添加成功后向测试用户发一条确认消息 |
+| F-04 | 编辑 Bot | P1 | 修改已绑定的 Bot 配置 |
+| F-05 | 删除 Bot | P1 | 解除 Bot 绑定 |
+| F-06 | 查看 Bot 列表 | P0 | 所有已绑定 Bot 的概览（在线/离线状态） |
 
 #### 2.1.2 消息收发
 
 | 编号 | 功能 | 优先级 | 说明 |
 |------|------|--------|------|
-| F-07 | 发送文本消息 | P0 | 向指定企业微信用户发送文本 |
+| F-07 | 发送文本/Markdown 消息 | P0 | 向指定企业微信用户发送消息 |
 | F-08 | 发送图片消息 | P1 | 支持上传图片并发送 |
 | F-09 | 发送文件消息 | P2 | 支持上传文件并发送 |
-| F-10 | 接收消息推送 | P0 | 实时接收用户发来的消息 |
+| F-10 | 接收消息推送 | P0 | 实时接收用户发来的消息（WebSocket 回调） |
 | F-11 | 消息记录查询 | P0 | 查看历史消息记录 |
-| F-12 | 消息实时推送 | P0 | WebSocket 推送到前端 |
+| F-12 | 消息实时推送 | P0 | 通过 socket.io 推送到前端浏览器 |
+| F-13 | 回复消息 | P0 | 在网页回复用户消息 |
+| F-14 | 流式回复 | P1 | 支持流式（类打字）回复效果 |
 
 #### 2.1.3 用户与认证
 
 | 编号 | 功能 | 优先级 | 说明 |
 |------|------|--------|------|
-| F-13 | 用户注册 | P0 | 用户名 + 密码注册 |
-| F-14 | 用户登录 | P0 | JWT 认证 |
-| F-15 | 用户注销 | P1 | 退出登录 |
+| F-15 | 用户注册 | P0 | 用户名 + 密码注册 |
+| F-16 | 用户登录 | P0 | JWT 认证 |
+| F-17 | 用户注销 | P1 | 退出登录 |
 
 #### 2.1.4 联系人
 
 | 编号 | 功能 | 优先级 | 说明 |
 |------|------|--------|------|
-| F-16 | 联系人列表 | P1 | 加载企业微信通讯录中可联系的用户 |
-| F-17 | 最近会话 | P1 | 最近有消息来往的用户列表 |
+| F-18 | 最近会话 | P1 | 最近有消息来往的用户列表 |
+
+> 注意：智能机器人模式下，只能与**主动给机器人发过消息的用户**通信。无法像自建应用那样通过 API 拉取全量通讯录。联系人列表来自历史消息中出现的用户。
 
 ### 2.2 非功能需求
 
@@ -93,7 +106,7 @@
 | N-01 | 并发连接 | 支持 100+ WebSocket 并发 |
 | N-02 | 消息延迟 | 端到端延迟 < 2 秒 |
 | N-03 | 数据持久化 | SQLite 存储，定期备份 |
-| N-04 | 安全性 | 加密传输（TLS），密码哈希存储，AES 解密隔离 |
+| N-04 | 安全性 | 加密传输（TLS），密码哈希存储 |
 | N-05 | 可维护性 | 日志记录，错误追踪 |
 
 ---
@@ -104,36 +117,46 @@
 
 | 层级 | 技术 | 版本 | 理由 |
 |------|------|------|------|
-| **后端框架** | Express | 4.x | Node.js 生态最成熟的 Web 框架，社区丰富，学习曲线平缓 |
-| **运行时** | Node.js | v24.15 | 服务器已有环境，无需额外安装；事件驱动适合 I/O 密集场景 |
+| **后端框架** | Express | 4.x | Node.js 生态最成熟的 Web 框架 |
+| **运行时** | Node.js | v24.15 | 服务器已有，无需额外安装 |
 | **前端框架** | React | 19.x | 组件化开发，生态成熟 |
-| **UI 组件库** | Ant Design | 5.x | 企业级 UI 规范，内置 Chat 场景所需组件 |
+| **UI 组件库** | Ant Design | 5.x | 企业级 UI 规范，聊天场景组件丰富 |
 | **构建工具** | Vite | 6.x | 极速 HMR，开箱即用的 React + TS 支持 |
-| **数据库** | SQLite (better-sqlite3) | 11.x | 零配置、单文件，适合中小规模部署；同步 API 性能优异 |
-| **WebSocket** | socket.io | 4.x | 自动降级、房间管理、ACK 机制，比原生 WebSocket 更易用 |
-| **企微 SDK** | wechat-enterprise | 最新 | 封装了加解密、签名验证、API 调用等复杂逻辑 |
+| **数据库** | SQLite (better-sqlite3) | 11.x | 零配置单文件，适合中小规模部署 |
+| **网页 WebSocket** | socket.io | 4.x | 自动降级、房间管理、ACK 机制 |
+| **企微 SDK** | **@wecom/aibot-node-sdk** | 1.0.7 | **企业微信智能机器人官方 SDK，WebSocket 长连接** |
 | **反向代理** | Caddy | 2.11.3 | 自动 TLS、配置简洁、服务器已安装 |
 | **进程管理** | systemd | 系统自带 | Ubuntu 原生，自动重启、日志管理 |
 
-### 3.2 选型分析
+### 3.2 SDK 选择说明
 
-#### 为什么选 Node.js 而非 Go？
-- 服务器已有 Node.js v24.15，无 Go 环境
-- 本项目为 I/O 密集型（网络请求、文件读写），Node.js 事件循环天然适合
-- 企微相关 npm 包生态成熟（`wechat-enterprise` 等）
-- 前后端统一语言，降低团队认知负担
+本项目不使用传统的 `wechat-enterprise`（自建应用 SDK），而是使用 `@wecom/aibot-node-sdk`（智能机器人 SDK）。
 
-#### 为什么选 SQLite 而非 PostgreSQL/MySQL？
-- 单用户/小团队场景，不需要独立数据库服务
-- 零运维，备份即是复制文件
-- better-sqlite3 同步 API 比异步 SQLite 驱动快 2-5x
-- 未来需要扩展时，可平滑迁移到 PostgreSQL
+**`@wecom/aibot-node-sdk` 核心能力：**
 
-#### 为什么选 socket.io 而非原生 WebSocket？
-- 自动支持长轮询降级（兼容老旧网络环境）
-- 内置房间（Room）机制，天然支持 Bot 隔离
-- 支持 ACK 回调，消息可靠性有保障
-- 自动重连机制，网络波动后自动恢复
+| 能力 | 说明 |
+|------|------|
+| WebSocket 长连接 | 连接到 `wss://openws.work.weixin.qq.com`，全双工通信 |
+| 自动认证 | 连接建立后自动发送认证帧（botId + secret） |
+| 心跳保活 | 默认 30 秒心跳，自动维持连接 |
+| 自动重连 | 指数退避重连，最大重连次数可配 |
+| 消息收发 | 事件驱动：`message.text`、`message.image` 等 |
+| 主动推送 | `sendMessage(chatid, body)` 主动向用户发消息 |
+| 流式回复 | `replyStream()` 支持打字机效果 |
+| 媒体上传/下载 | 分片上传临时素材，AES 解密文件下载 |
+
+### 3.3 方案对比：自建应用 vs 智能机器人
+
+| 维度 | 自建应用（Agent）+ URL 回调 | ✅ 智能机器人 + WebSocket 长连接 |
+|------|---------------------------|--------------------------------|
+| SDK | `wechat-enterprise` | `@wecom/aibot-node-sdk` |
+| 配置参数 | corpid + agentid + secret + token + encodingAESKey（5 个） | **botId + secret（2 个）** |
+| 连接方式 | 需要公网 HTTPS 端口暴露回调 URL | **WebSocket 主动连接企微，不暴露端口** |
+| 消息加密 | AES-256-CBC + PKCS7 + XML（复杂） | **SDK 内部处理，开发者零感知** |
+| 双向通信 | 回调收消息 + API 发消息（两套机制） | **一条 WebSocket 全搞定** |
+| Token 管理 | 需要自行管理 access_token（7200s 过期） | **SDK 自动管理** |
+| 通讯录 | 可通过 API 拉取全量通讯录 | **只能与主动发过消息的用户通信** |
+| 适用于本项目 | ✔️ 复杂但通用 | ✅ **简单、现代、推荐** |
 
 ---
 
@@ -142,52 +165,48 @@
 ### 4.1 总体架构图
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Internet                                 │
-└──────────────────┬──────────────────────────────┬───────────────┘
-                   │                              │
-                   ▼                              ▼
-           ┌───────────────┐             ┌───────────────┐
-           │  User Browser │             │   WeChat Work │
-           │  (React SPA)  │             │   (企业微信)   │
-           └───────┬───────┘             └───────┬───────┘
-                   │                             │
-                   │ HTTPS / WSS                │ HTTPS
-                   ▼                             ▼
-           ┌──────────────────────────────────────────────────────┐
-           │               Caddy Reverse Proxy                    │
-           │           (自动 TLS · 路径路由 · WSS 代理)            │
-           └──────────────────────┬───────────────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────────────┐
-           │              Node.js Express Server                  │
-           │                                                      │
-           │  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
-           │  │ REST API │  │WebSocket │  │ Callback Handler  │  │
-           │  │  Router  │  │  Server  │  │   (AES Decrypt)   │  │
-           │  └────┬─────┘  └────┬─────┘  └────────┬──────────┘  │
-           │       │             │                  │             │
-           │       ▼             ▼                  ▼             │
-           │  ┌──────────────────────────────────────────────┐    │
-           │  │            Service Layer                      │    │
-           │  │  ┌──────────┐ ┌──────────┐ ┌──────────────┐ │    │
-           │  │  │BotManage │ │MsgService│ │WeComAPIProxy │ │    │
-           │  │  └──────────┘ └──────────┘ └──────────────┘ │    │
-           │  └──────────────────────────────────────────────┘    │
-           │                          │                           │
-           │                          ▼                           │
-           │  ┌──────────────────────────────────────────────┐    │
-           │  │              SQLite Database                   │    │
-           │  │  (bots · messages · users · contacts)         │    │
-           │  └──────────────────────────────────────────────┘    │
-           └──────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │          企业微信 API (第三方 API)              │
-           │  https://qyapi.weixin.qq.com/cgi-bin/         │
-           └──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         Internet                                  │
+└────────────────────┬──────────────────────────┬──────────────────┘
+                     │                          │
+                     ▼                          ▼
+             ┌───────────────┐         ┌───────────────┐
+             │ User Browser  │         │  WeChat Work  │
+             │ (React SPA)   │         │  (企业微信)     │
+             └───────┬───────┘         └───────┬───────┘
+                     │                         │
+                     │ HTTPS/WSS               │ WebSocket
+                     ▼                         ▼
+             ┌──────────────────────────────────────────────────────┐
+             │                Caddy Reverse Proxy                    │
+             │            (自动 TLS · 路径路由 · WSS 代理)            │
+             └──────────────────────┬───────────────────────────────┘
+                                    │
+                                    ▼
+             ┌──────────────────────────────────────────────────────┐
+             │               Node.js Express Server                  │
+             │                                                       │
+             │  ┌──────────┐  ┌──────────┐  ┌───────────────────┐   │
+             │  │ REST API │  │socket.io │  │  WSClient         │   │
+             │  │  Router  │  │  Server  │  │  (aibot-node-sdk) │   │
+             │  └────┬─────┘  └────┬─────┘  └────────┬──────────┘   │
+             │       │             │                   │              │
+             │       ▼             ▼                   │              │
+             │  ┌──────────────────────────────────┐   │              │
+             │  │        Service Layer              │   │              │
+             │  │  ┌──────────┐ ┌────────────────┐ │   │              │
+             │  │  │BotManager │ │  MsgService   │ │   │              │
+             │  │  └──────────┘ └───────┬────────┘ │   │              │
+             │  └───────────────────────┼──────────┘   │              │
+             │                          │              │              │
+             │                          ▼              ▼              │
+             │  ┌──────────────────────────────────────────────────┐  │
+             │  │                SQLite Database                    │  │
+             │  │        (bots · messages · users)                 │  │
+             │  └──────────────────────────────────────────────────┘  │
+             └────────────────────────────────────────────────────────┘
+
+                    ◄──── WebSocket (wss://openws.work.weixin.qq.com) ────► 企业微信
 ```
 
 ### 4.2 消息流
@@ -195,45 +214,137 @@
 ```
 ▼ 发送消息（网页 → 企微用户）
 
-[浏览器] ──(WSS)──→ [socket.io] ──→ [MsgService] ──(HTTP POST)──→ [企微 API]
-                                                                    │
-                                                                    ▼
-                                                               [企微用户收到消息]
+[浏览器] ── socket.io ──→ [MsgService] ── wsClient.sendMessage(chatid, body) ──→ [企微用户]
 
 ▼ 接收消息（企微用户 → 网页）
 
-[企微用户发消息] ──(HTTP POST)──→ [Caddy] ──→ [Callback Handler]
-                                                    │
-                                                    ├─→ AES 解密 XML
-                                                    ├─→ 解析消息体
-                                                    ├─→ 存入 SQLite
-                                                    └─→ socket.io 推送 → [浏览器]
+[企微用户发消息] ── WebSocket ──→ [WSClient]
+                                      │
+                                      ├─→ 事件 'message.text'
+                                      ├─→ 解析消息体
+                                      ├─→ 存入 SQLite
+                                      └─→ socket.io 推送 → [浏览器]
 ```
 
 ### 4.3 进程模型
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                Node.js 单进程                         │
-│                                                       │
-│  Main Thread (Event Loop)                             │
-│  ┌─────────────────────────────────────────────┐     │
-│  │  Express HTTP Server (端口 3001)             │     │
-│  │  socket.io Server (挂载在 HTTP Server 上)     │     │
-│  │  WeCom Callback Receiver                     │     │
-│  │  Access Token 定时刷新 (setInterval)          │     │
-│  └─────────────────────────────────────────────┘     │
-│                                                       │
-│  Worker Threads (better-sqlite3 同步查询)             │
-│  └── SQLite 查询 (同步但不阻塞事件循环)               │
-└──────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│                Node.js 单进程                           │
+│                                                         │
+│  Main Thread (Event Loop)                               │
+│  ┌───────────────────────────────────────────────┐     │
+│  │  Express HTTP Server (端口 3001)               │     │
+│  │  socket.io Server (挂载在 HTTP Server 上)       │     │
+│  │  WSClient × N (每个 Bot 一条 WebSocket 长连接)  │     │
+│  │     ├─ 自动认证                                  │     │
+│  │     ├─ 30s 心跳保活                              │     │
+│  │     ├─ 指数退避自动重连                          │     │
+│  │     └─ 消息事件分发                              │     │
+│  └───────────────────────────────────────────────┘     │
+│                                                         │
+│  Worker Threads (better-sqlite3 同步查询)               │
+│  └── SQLite 查询 (同步但不阻塞事件循环)                 │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 5. 数据库设计
+## 5. 企业微信智能机器人 WebSocket 协议
 
-### 5.1 ER 图
+### 5.1 SDK 使用方式
+
+本项目使用 `@wecom/aibot-node-sdk`（v1.0.7）作为与企业微信通信的核心组件。
+
+```typescript
+import { WSClient } from '@wecom/aibot-node-sdk';
+
+// 1. 创建客户端（极简配置）
+const wsClient = new WSClient({
+  botId: 'aibxxxxxxxxxxxxxxxxx',   // 企微后台获取
+  secret: 'your-bot-secret',       // 企微后台获取
+});
+
+// 2. 建立 WebSocket 长连接（SDK 自动管理心跳和重连）
+wsClient.connect();
+
+// 3. 监听消息
+wsClient.on('message.text', (frame) => {
+  const { msgid, aibotid, chatid, chattype, from, text, msgtype } = frame.body;
+  console.log(`收到消息: from=${from.userid}, content=${text.content}`);
+});
+
+// 4. 主动发送消息（主动推送，无需等待回调）
+await wsClient.sendMessage('userid_or_chatid', {
+  msgtype: 'markdown',
+  markdown: { content: '这是一条**主动推送**的消息' },
+});
+
+// 5. 回复消息（回复某条收到的消息）
+await wsClient.reply(receivedFrame, {
+  msgtype: 'stream',
+  stream: {
+    id: 'stream-001',
+    content: '回复内容（支持 Markdown）',
+    finish: true,
+  },
+});
+```
+
+### 5.2 WebSocket 帧协议
+
+SDK 底层使用统一的 JSON 帧格式进行 WebSocket 通信：
+
+| 方向 | cmd | 说明 |
+|------|-----|------|
+| 客户端 → 服务端 | `aibot_subscribe` | 认证订阅（携带 botId + secret） |
+| 服务端 → 客户端 | `aibot_msg_callback` | 消息推送回调 |
+| 服务端 → 客户端 | `aibot_event_callback` | 事件推送回调 |
+| 客户端 → 服务端 | `aibot_respond_msg` | 回复消息 |
+| 客户端 → 服务端 | `aibot_send_msg` | 主动发送消息 |
+| 客户端 → 服务端 | `ping` | 心跳 |
+
+### 5.3 消息类型
+
+SDK 支持的消息类型：
+
+| 类型 | SDK 事件 | 说明 |
+|------|----------|------|
+| 文本 | `message.text` | 用户发送的文本消息 |
+| 图片 | `message.image` | 用户发送的图片 |
+| 图文混排 | `message.mixed` | 文本+图片组合 |
+| 语音 | `message.voice` | 语音消息（已转文字） |
+| 文件 | `message.file` | 文件消息 |
+| 视频 | `message.video` | 视频消息 |
+
+### 5.4 事件类型
+
+| 事件 | SDK 事件 | 说明 |
+|------|----------|------|
+| 进入会话 | `event.enter_chat` | 用户首次进入机器人单聊 |
+| 模板卡片点击 | `event.template_card_event` | 用户点击模板卡片按钮 |
+| 用户反馈 | `event.feedback_event` | 用户对回复进行反馈 |
+
+### 5.5 与自建应用回调的关键差异
+
+```
+自建应用 (Agent) 回调:
+  企微 ──HTTP POST XML(AES加密)──→ 你的回调URL
+  你  ──HTTP GET access_token──→ 企微API
+  你  ──HTTP POST message──→ 企微API
+  需要: 公网暴露 + AES加解密 + Token管理 + XML解析
+
+智能机器人 (AI Bot) WebSocket:
+  企微 ◄═══════ WebSocket (全双工) ═══════► 你
+  连接建立后自动双向通信
+  需要: 无公网暴露 + 零加解密 + 零Token管理 + JSON帧
+```
+
+---
+
+## 6. 数据库设计
+
+### 6.1 ER 图
 
 ```
 ┌─────────────┐       ┌─────────────────┐       ┌─────────────┐
@@ -242,42 +353,24 @@
 │ id (PK)     │◄──────│ user_id (FK)    │       │ id (PK)     │
 │ username    │       │ id (PK)         │◄──────│ bot_id (FK) │
 │ password_ha │       │ name            │       │ direction   │
-│ created_at  │       │ corpid          │       │ msg_type    │
-└─────────────┘       │ agentid         │       │ content     │
-                      │ secret          │       │ from_user   │
-                      │ token           │       │ to_user     │
-                      │ encoding_aeskey │       │ msg_id      │
-                      │ status          │       │ created_at  │
-                      │ created_at      │       └─────────────┘
-                      │ updated_at      │
-                      └─────────────────┘
-                      │
-                      ▼
-              ┌─────────────────┐
-              │  access_tokens  │
-              ├─────────────────┤
-              │ id (PK)         │
-              │ bot_id (FK)     │
-              │ access_token    │
-              │ expires_at      │
-              │ created_at      │
-              └─────────────────┘
+│ created_at  │       │ bot_id          │       │ msg_type    │
+└─────────────┘       │ secret          │       │ content     │
+                      │ status          │       │ from_user   │
+                      │ created_at      │       │ to_user     │
+                      └─────────────────┘       │ msg_id      │
+                                                 │ created_at  │
+                                                 │ wx_msg_id   │
+                                                 └─────────────┘
 ```
 
-### 5.2 表结构
-
-#### 5.2.1 `users` — 用户表
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INTEGER | PK, AUTOINCREMENT | 用户唯一标识 |
-| `username` | TEXT | UNIQUE, NOT NULL | 用户名（3-32 字符） |
-| `password_hash` | TEXT | NOT NULL | bcrypt 哈希后的密码 |
-| `display_name` | TEXT | DEFAULT '' | 显示名称 |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 创建时间 ISO 8601 |
-| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 最后更新时间 |
+### 6.2 建表 SQL
 
 ```sql
+-- 启用 WAL 模式提升并发性能
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+
+-- 用户表
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     username      TEXT    UNIQUE NOT NULL CHECK(length(username) >= 3),
@@ -286,132 +379,46 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
-```
 
-#### 5.2.2 `bots` — 企业微信 Bot 配置表
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INTEGER | PK, AUTOINCREMENT | Bot 唯一标识 |
-| `user_id` | INTEGER | FK → users.id, NOT NULL | 所属用户 |
-| `name` | TEXT | NOT NULL | Bot 别名（方便识别） |
-| `corpid` | TEXT | NOT NULL | 企业 ID |
-| `agentid` | INTEGER | NOT NULL | 应用 Agent ID |
-| `secret` | TEXT | NOT NULL | 应用 Secret |
-| `token` | TEXT | NOT NULL | 回调配置中的 Token |
-| `encoding_aeskey` | TEXT | NOT NULL | 回调配置中的 EncodingAESKey |
-| `callback_url` | TEXT | DEFAULT NULL | 回调 URL |
-| `status` | TEXT | DEFAULT 'inactive' | 状态：active / inactive / error |
-| `last_error` | TEXT | DEFAULT NULL | 最近错误信息 |
-| `created_at` | TEXT | NOT NULL DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-| `updated_at` | TEXT | NOT NULL DEFAULT CURRENT_TIMESTAMP | 更新时间 |
-
-```sql
+-- Bot 配置表
+-- 仅需 botId + secret，与 OpenClaw 配置一致
 CREATE TABLE IF NOT EXISTS bots (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name             TEXT    NOT NULL,
-    corpid           TEXT    NOT NULL,
-    agentid          INTEGER NOT NULL,
-    secret           TEXT    NOT NULL,
-    token            TEXT    NOT NULL,
-    encoding_aeskey  TEXT    NOT NULL CHECK(length(encoding_aeskey) = 43),
-    callback_url     TEXT    DEFAULT NULL,
-    status           TEXT    DEFAULT 'inactive' CHECK(status IN ('active','inactive','error')),
-    last_error       TEXT    DEFAULT NULL,
-    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name          TEXT    NOT NULL,
+    bot_id        TEXT    NOT NULL,              -- 企微智能机器人 BotID（以 aib 开头）
+    secret        TEXT    NOT NULL,              -- 机器人 Secret
+    status        TEXT    DEFAULT 'disconnected' CHECK(status IN ('connected','disconnected','error')),
+    last_error    TEXT    DEFAULT NULL,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
-
 CREATE INDEX idx_bots_user_id ON bots(user_id);
-```
 
-#### 5.2.3 `messages` — 消息记录表
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INTEGER | PK, AUTOINCREMENT | 消息唯一标识 |
-| `bot_id` | INTEGER | FK → bots.id, NOT NULL | 所属 Bot |
-| `direction` | TEXT | NOT NULL | 方向：`outgoing`（发送） / `incoming`（接收） |
-| `msg_type` | TEXT | NOT NULL | 消息类型：`text` / `image` / `file` / `voice` / `video` |
-| `content` | TEXT | NOT NULL | 消息内容（文本正文 或 媒体文件 URL） |
-| `from_user` | TEXT | NOT NULL | 发送者（`system` 表示系统发送，否则为企微 userid） |
-| `to_user` | TEXT | NOT NULL | 接收者（企微 userid，多个用 `\|` 分隔） |
-| `msg_id` | TEXT | DEFAULT NULL | 企业微信消息 ID（用于去重） |
-| `status` | TEXT | DEFAULT 'sent' | 状态：sending / sent / delivered / failed |
-| `created_at` | TEXT | NOT NULL DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-
-```sql
+-- 消息记录表
 CREATE TABLE IF NOT EXISTS messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     bot_id      INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
     direction   TEXT    NOT NULL CHECK(direction IN ('outgoing','incoming')),
-    msg_type    TEXT    NOT NULL CHECK(msg_type IN ('text','image','file','voice','video')),
-    content     TEXT    NOT NULL,
-    from_user   TEXT    NOT NULL,
-    to_user     TEXT    NOT NULL,
-    msg_id      TEXT    DEFAULT NULL,
-    status      TEXT    DEFAULT 'sent' CHECK(status IN ('sending','sent','delivered','failed')),
+    msg_type    TEXT    NOT NULL CHECK(msg_type IN ('text','markdown','image','file','voice','video','mixed')),
+    content     TEXT    NOT NULL,                -- 消息内容/描述
+    from_user   TEXT    NOT NULL,                -- 发送方 userid
+    to_user     TEXT    NOT NULL DEFAULT '',     -- 接收方 userid（incoming 时可能为空）
+    msg_id      TEXT    DEFAULT NULL,            -- 本地消息 ID
+    wx_msg_id   TEXT    DEFAULT NULL,            -- 企业微信消息 ID（用于排重）
+    status      TEXT    DEFAULT 'sent' CHECK(status IN ('sending','sent','delivered','failed','read')),
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
-
-CREATE INDEX idx_messages_bot_id   ON messages(bot_id);
-CREATE INDEX idx_messages_created  ON messages(bot_id, created_at DESC);
-CREATE UNIQUE INDEX idx_messages_msg_id ON messages(msg_id) WHERE msg_id IS NOT NULL;
-```
-
-#### 5.2.4 `access_tokens` — Access Token 缓存表
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INTEGER | PK, AUTOINCREMENT | |
-| `bot_id` | INTEGER | FK → bots.id, UNIQUE, NOT NULL | 每个 Bot 一条记录 |
-| `access_token` | TEXT | NOT NULL | 缓存的 access_token |
-| `expires_at` | TEXT | NOT NULL | 过期时间（ISO 8601） |
-| `created_at` | TEXT | NOT NULL DEFAULT CURRENT_TIMESTAMP | |
-| `updated_at` | TEXT | NOT NULL DEFAULT CURRENT_TIMESTAMP | |
-
-```sql
-CREATE TABLE IF NOT EXISTS access_tokens (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    bot_id        INTEGER UNIQUE NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
-    access_token  TEXT    NOT NULL,
-    expires_at    TEXT    NOT NULL,
-    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-```
-
-#### 5.2.5 `contacts` — 联系人缓存表（可选）
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INTEGER | PK, AUTOINCREMENT | |
-| `bot_id` | INTEGER | FK → bots.id, NOT NULL | 所属 Bot |
-| `userid` | TEXT | NOT NULL | 企微成员 UserID |
-| `name` | TEXT | NOT NULL | 成员姓名 |
-| `avatar` | TEXT | DEFAULT NULL | 头像 URL |
-| `department` | TEXT | DEFAULT NULL | 部门（JSON 数组） |
-| `created_at` | TEXT | NOT NULL DEFAULT CURRENT_TIMESTAMP | |
-
-```sql
-CREATE TABLE IF NOT EXISTS contacts (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    bot_id      INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
-    userid      TEXT    NOT NULL,
-    name        TEXT    NOT NULL,
-    avatar      TEXT    DEFAULT NULL,
-    department  TEXT    DEFAULT NULL,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(bot_id, userid)
-);
+CREATE INDEX idx_messages_bot_id  ON messages(bot_id);
+CREATE INDEX idx_messages_created ON messages(bot_id, created_at DESC);
+CREATE UNIQUE INDEX idx_messages_wx_msg_id ON messages(wx_msg_id) WHERE wx_msg_id IS NOT NULL;
 ```
 
 ---
 
-## 6. API 接口设计
+## 7. API 接口设计
 
-### 6.1 认证接口
+### 7.1 认证接口
 
 #### POST /api/auth/register — 注册
 
@@ -419,29 +426,10 @@ CREATE TABLE IF NOT EXISTS contacts (
 Request:
   POST /api/auth/register
   Content-Type: application/json
-
-  {
-    "username": "alice",
-    "password": "SecureP@ss123",
-    "display_name": "Alice"
-  }
+  { "username": "alice", "password": "***" }
 
 Response 201:
-  {
-    "success": true,
-    "data": {
-      "id": 1,
-      "username": "alice",
-      "display_name": "Alice",
-      "created_at": "2026-07-03T10:00:00Z"
-    }
-  }
-
-Response 400:
-  {
-    "success": false,
-    "error": "Username already exists"
-  }
+  { "success": true, "data": { "id": 1, "username": "alice", "created_at": "..." } }
 ```
 
 #### POST /api/auth/login — 登录
@@ -450,603 +438,169 @@ Response 400:
 Request:
   POST /api/auth/login
   Content-Type: application/json
-
-  {
-    "username": "alice",
-    "password": "SecureP@ss123"
-  }
+  { "username": "alice", "password": "***" }
 
 Response 200:
-  {
-    "success": true,
-    "data": {
-      "token": "eyJhbGciOiJIUzI1NiIs...",
-      "user": {
-        "id": 1,
-        "username": "alice",
-        "display_name": "Alice"
-      }
-    }
-  }
-
-Response 401:
-  {
-    "success": false,
-    "error": "Invalid username or password"
-  }
+  { "success": true, "data": { "token": "eyJ...", "user": { "id": 1, "username": "alice" } } }
 ```
 
-### 6.2 Bot 管理接口
+### 7.2 Bot 管理接口
 
 > 所有 Bot 管理接口需在 Header 中携带 `Authorization: Bearer <token>`。
 
 #### GET /api/bots — 获取 Bot 列表
 
 ```
-Request:
-  GET /api/bots
-
 Response 200:
-  {
-    "success": true,
-    "data": [
-      {
-        "id": 1,
-        "name": "客服机器人",
-        "corpid": "ww123456789",
-        "agentid": 1000001,
-        "status": "active",
-        "callback_url": "https://chat.zeaho.site/api/callback/1",
-        "created_at": "2026-07-03T10:00:00Z"
-      }
-    ]
-  }
+  { "success": true, "data": [
+    { "id": 1, "name": "客服机器人", "bot_id": "aibxxx...", "status": "connected", "created_at": "..." }
+  ]}
 ```
 
 #### POST /api/bots — 创建 Bot
 
 ```
 Request:
-  POST /api/bots
-  Content-Type: application/json
-
-  {
-    "name": "客服机器人",
-    "corpid": "ww123456789",
-    "agentid": 1000001,
-    "secret": "your-secret-here",
-    "token": "your-token-here",
-    "encoding_aeskey": "your-43-char-aes-key-here"
-  }
+  { "name": "客服机器人", "bot_id": "aibxxxxxxxxx", "secret": "xxx" }
 
 Response 201:
-  {
-    "success": true,
-    "data": {
-      "id": 1,
-      "name": "客服机器人",
-      "corpid": "ww123456789",
-      "agentid": 1000001,
-      "callback_url": "https://chat.zeaho.site/api/callback/1",
-      "status": "inactive",
-      "created_at": "2026-07-03T10:00:00Z"
-    }
-  }
+  { "success": true, "data": { "id": 1, "name": "客服机器人", "status": "disconnected", ... } }
+
+创建成功后，服务端会自动使用 bot_id + secret 建立 WebSocket 长连接。
 ```
 
 #### PUT /api/bots/:id — 更新 Bot
 
 ```
 Request:
-  PUT /api/bots/1
-  Content-Type: application/json
-
-  {
-    "name": "客服机器人 v2",
-    "secret": "new-secret"
-  }
+  { "name": "客服机器人 v2", "secret": "new-secret" }
 
 Response 200:
-  {
-    "success": true,
-    "data": {
-      "id": 1,
-      "name": "客服机器人 v2",
-      "updated_at": "2026-07-03T11:00:00Z"
-    }
-  }
+  { "success": true, "data": { ... } }
 ```
 
 #### DELETE /api/bots/:id — 删除 Bot
 
 ```
-Request:
-  DELETE /api/bots/1
-
 Response 200:
-  {
-    "success": true,
-    "data": { "message": "Bot deleted" }
-  }
+  { "success": true }
+
+删除时自动断开 WebSocket 连接并清理消息记录。
 ```
 
-#### POST /api/bots/:id/verify — 验证回调联通性
-
-```
-Request:
-  POST /api/bots/1/verify
-
-Response 200:
-  {
-    "success": true,
-    "data": {
-      "status": "active",
-      "message": "Callback URL verified successfully"
-    }
-  }
-
-Response 400:
-  {
-    "success": false,
-    "error": "Callback verification failed: request timeout"
-  }
-```
-
-### 6.3 消息接口
+### 7.3 消息接口
 
 #### POST /api/bots/:id/send — 发送消息
 
 ```
 Request:
-  POST /api/bots/1/send
-  Content-Type: application/json
-
   {
-    "to_user": "zhangsan",
-    "msg_type": "text",
-    "content": "您好，有什么可以帮助您的？"
+    "to_user": "zhangsan",          // 企业微信 userid
+    "msg_type": "markdown",         // text | markdown
+    "content": "**你好**，这是一条测试消息"
   }
 
 Response 200:
-  {
-    "success": true,
-    "data": {
-      "message_id": 42,
-      "msg_id": "1234567890",
-      "status": "sent"
-    }
-  }
+  { "success": true, "data": { "message_id": 100, "status": "sent" } }
 ```
 
-支持的消息类型：
-
-| msg_type | content 说明 |
-|----------|-------------|
-| `text` | 文本内容字符串 |
-| `image` | 图片文件的本地路径或 base64 |
-| `file` | 文件的本地路径或 base64 |
-| `markdown` | Markdown 文本（使用企微 markdown 消息类型） |
+后端调用 `wsClient.sendMessage(to_user, { msgtype, body })` 发送。
 
 #### GET /api/bots/:id/messages — 消息记录
 
 ```
-Request:
-  GET /api/bots/1/messages?contact=zhangsan&page=1&page_size=50
+Query:
+  ?contact=zhangsan&page=1&page_size=20
 
 Response 200:
-  {
-    "success": true,
-    "data": {
-      "total": 128,
-      "page": 1,
-      "page_size": 50,
-      "items": [
-        {
-          "id": 42,
-          "direction": "outgoing",
-          "msg_type": "text",
-          "content": "您好，有什么可以帮助您的？",
-          "from_user": "system",
-          "to_user": "zhangsan",
-          "msg_id": "1234567890",
-          "created_at": "2026-07-03T10:30:00Z"
-        },
-        {
-          "id": 41,
-          "direction": "incoming",
-          "msg_type": "text",
-          "content": "你好，我想咨询一下订单问题",
-          "from_user": "zhangsan",
-          "to_user": "system",
-          "msg_id": "0987654321",
-          "created_at": "2026-07-03T10:29:00Z"
-        }
-      ]
-    }
-  }
-```
-
-查询参数：
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `contact` | string | 否 | 按联系人筛选（userid） |
-| `direction` | string | 否 | incoming / outgoing |
-| `start_time` | string | 否 | 起始时间 ISO 8601 |
-| `end_time` | string | 否 | 结束时间 ISO 8601 |
-| `page` | number | 否 | 页码，默认 1 |
-| `page_size` | number | 否 | 每页条数，默认 50，最大 200 |
-
-### 6.4 联系人接口
-
-#### GET /api/bots/:id/contacts — 获取联系人列表
-
-```
-Request:
-  GET /api/bots/1/contacts?query=张三
-
-Response 200:
-  {
-    "success": true,
-    "data": [
-      {
-        "userid": "zhangsan",
-        "name": "张三",
-        "avatar": "https://wework.qpic.cn/...",
-        "department": ["产品部"]
-      }
+  { "success": true, "data": {
+    "total": 50, "page": 1, "page_size": 20,
+    "items": [
+      { "id": 100, "direction": "incoming", "msg_type": "text",
+        "content": "你好", "from_user": "zhangsan",
+        "created_at": "2026-07-03T10:00:00Z" }
     ]
-  }
+  }}
 ```
 
-#### GET /api/bots/:id/conversations — 最近会话列表
+#### GET /api/bots/:id/contacts — 最近联系人
 
 ```
-Request:
-  GET /api/bots/1/conversations
-
 Response 200:
-  {
-    "success": true,
-    "data": [
-      {
-        "contact_userid": "zhangsan",
-        "contact_name": "张三",
-        "last_message": "好的收到",
-        "last_time": "2026-07-03T10:30:00Z",
-        "unread_count": 0
-      }
-    ]
-  }
+  { "success": true, "data": [
+    { "userid": "zhangsan", "name": "张三", "last_message": "...", "unread_count": 3 }
+  ]}
 ```
 
-### 6.5 回调接口（无认证）
+联系人来自历史消息中 `from_user` 的去重，按最后消息时间倒序。
 
-#### GET /api/callback/:botId — URL 验证
-
-```
-Request:
-  GET /api/callback/1?msg_signature=xxx&timestamp=123&nonce=456&echostr=encrypted_str
-
-Response 200:
-  [明文 echostr]  (纯文本，返回解密后的 echostr)
-
-Response 403:
-  [empty body]   (签名验证失败)
-```
-
-#### POST /api/callback/:botId — 接收消息回调
-
-```
-Request:
-  POST /api/callback/1?msg_signature=xxx&timestamp=123&nonce=456
-  Content-Type: text/xml
-
-  <xml>
-    <Encrypt>encrypted_xml_content</Encrypt>
-    <AgentID>1000001</AgentID>
-  </xml>
-
-Response 200:
-  [空字符串]  (成功)
-
-Response 403:
-  [empty body] (签名验证失败)
-```
-
-### 6.6 统一响应格式
-
-所有 API 响应遵循以下格式：
+### 7.4 统一响应格式
 
 ```typescript
 // 成功
-interface ApiSuccess<T> {
-  success: true;
-  data: T;
-}
-
+interface ApiSuccess<T> { success: true; data: T; }
 // 失败
-interface ApiError {
-  success: false;
-  error: string;
-  code?: string;       // 错误码，如 "VALIDATION_ERROR"
-  details?: unknown;   // 详细错误信息（可选）
-}
-
+interface ApiError { success: false; error: string; code?: string; }
 // 分页
-interface PaginatedData<T> {
-  total: number;
-  page: number;
-  page_size: number;
-  items: T[];
-}
+interface PaginatedData<T> { total: number; page: number; page_size: number; items: T[]; }
 ```
 
-HTTP 状态码：
-
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 请求成功 |
-| 201 | 创建成功 |
-| 400 | 请求参数错误 |
-| 401 | 未认证或 token 过期 |
-| 403 | 无权限 |
-| 404 | 资源不存在 |
-| 500 | 服务器内部错误 |
-
----
-
-## 7. 企业微信回调处理流程
-
-### 7.1 协议概述
-
-企业微信回调机制使用 AES-256-CBC 加密 + PKCS7 填充 + XML 封装，流程如下：
-
-1. 企业微信服务器向配置的 URL 发送 GET 请求验证 URL 有效性
-2. 验证通过后，后续消息以 POST 请求推送加密后的 XML 数据
-3. 每次请求都附带 `msg_signature`、`timestamp`、`nonce` 三个查询参数
-
-### 7.2 URL 验证流程图
-
-```
-企微服务器                          Node.js 服务器
-     │                                    │
-     │  GET /api/callback/1               │
-     │  ?msg_signature=SIG                │
-     │  &timestamp=1719900000             │
-     │  &nonce=123456                     │
-     │  &echostr=ENCRYPTED_STRING         │
-     │ ─────────────────────────────────►  │
-     │                                    │
-     │            ┌───────────────────┐   │
-     │            │ 1. 拼接 token +    │   │
-     │            │ timestamp + nonce  │   │
-     │            │ + echostr          │   │
-     │            │ → SHA1 生成签名    │   │
-     │            └───────────────────┘   │
-     │                    │               │
-     │            ┌───────▼───────────┐   │
-     │            │ 2. 比对签名是否    │   │
-     │            │ 匹配 msg_signature│   │
-     │            └───────┬───────────┘   │
-     │                    │               │
-     │           ┌────────▼────────┐      │
-     │           │ 匹配?           │      │
-     │           ├─── Yes ──┐  No ─┤      │
-     │           ▼          │      ▼      │
-     │    ┌─────────────┐   │   返回 403  │
-     │    │ 3. AES解密   │   │            │
-     │    │ echostr      │   │            │
-     │    │ → PKCS7 去填充│   │            │
-     │    └──────┬──────┘   │            │
-     │           ▼          │            │
-     │    ┌─────────────┐   │            │
-     │    │ 4. 返回明文   │   │            │
-     │    │ echostr      │   │            │
-     │    └──────┬──────┘   │            │
-     │           │          │            │
-     │  200 OK ←─┘          │            │
-     │  明文 echostr        │            │
-     │◄─────────────────────              │
-     │                                    │
-```
-
-### 7.3 消息接收流程图
-
-```
-企微服务器                          Node.js 服务器                 浏览器
-     │                                    │                      │
-     │  POST /api/callback/1              │                      │
-     │  ?msg_signature=SIG                │                      │
-     │  &timestamp=1719900000             │                      │
-     │  &nonce=123456                     │                      │
-     │  Content-Type: text/xml            │                      │
-     │  <xml><Encrypt>...</Encrypt></xml> │                      │
-     │ ─────────────────────────────────►  │                      │
-     │                                    │                      │
-     │            ┌───────────────────┐   │                      │
-     │            │ 1. 签名验证        │   │                      │
-     │            │ (同 URL 验证)      │   │                      │
-     │            └────────┬──────────┘   │                      │
-     │                     │              │                      │
-     │            ┌────────▼────────┐     │                      │
-     │            │ 2. 提取 Encrypt  │     │                      │
-     │            │ 节点中的密文     │     │                      │
-     │            └────────┬────────┘     │                      │
-     │                     │              │                      │
-     │            ┌────────▼────────┐     │                      │
-     │            │ 3. AES-256-CBC   │     │                      │
-     │            │ 解密 (PKCS7)     │     │                      │
-     │            └────────┬────────┘     │                      │
-     │                     │              │                      │
-     │            ┌────────▼────────┐     │                      │
-     │            │ 4. 解析 XML      │     │                      │
-     │            │ 提取消息内容     │     │                      │
-     │            │ FromUserName     │     │                      │
-     │            │ Content/MsgType  │     │                      │
-     │            │ CreateTime/MsgId │     │                      │
-     │            └────────┬────────┘     │                      │
-     │                     │              │                      │
-     │            ┌────────▼────────┐     │                      │
-     │            │ 5. 去重检查      │     │                      │
-     │            │ msg_id 是否已存  │     │                      │
-     │            └────────┬────────┘     │                      │
-     │                     │              │                      │
-     │            ┌────────▼────────┐     │                      │
-     │            │ 6. 存入 messages │     │                      │
-     │            │ 表              │     │                      │
-     │            └────────┬────────┘     │                      │
-     │                     │              │                      │
-     │            ┌────────▼────────┐     │                      │
-     │            │ 7. 通过 socket.io│     │                      │
-     │            │ 推送到前端      │     │                      │
-     │            └────────┬────────┘     │                      │
-     │                     │              │                      │
-     │  200 OK ←───────────┘              │                      │
-     │  (空响应)                           │                      │
-     │◄──────────────────────────────────  │                      │
-     │                                    │                      │
-     │                                    │  socket.io emit      │
-     │                                    │  "new_message"      │
-     │                                    │ ──────────────────►  │
-     │                                    │                      │
-     │                                    │                      │ 实时展示消息
-     │                                    │                      │ ◄──────────
-```
-
-### 7.4 加解密核心逻辑
-
-```javascript
-// AES-256-CBC 解密
-function decryptMessage(encodingAESKey, encryptText) {
-  // 1. Base64 解码 encodingAESKey 得到 AESKey（43 字符 Base64 → 32 字节）
-  const aesKey = Buffer.from(encodingAESKey + '=', 'base64');
-
-  // 2. Base64 解码密文
-  const cipherBuf = Buffer.from(encryptText, 'base64');
-
-  // 3. AES-256-CBC 解密（IV = AESKey 前 16 字节）
-  const decipher = crypto.createDecipheriv('aes-256-cbc', aesKey, aesKey.slice(0, 16));
-  decipher.setAutoPadding(false);
-  let decrypted = Buffer.concat([decipher.update(cipherBuf), decipher.final()]);
-
-  // 4. PKCS7 去填充
-  const padLen = decrypted[decrypted.length - 1];
-  decrypted = decrypted.slice(0, decrypted.length - padLen);
-
-  // 5. 解析明文结构
-  //   [4 字节网络序长度][消息内容][发送者 corpid]
-  const content = decrypted.slice(16); // 跳过 16 字节随机串
-  const msgLen = content.readUInt32BE(0);
-  const msgXml = content.slice(4, 4 + msgLen).toString('utf-8');
-
-  return msgXml;
-}
-```
-
-### 7.5 签名验证逻辑
-
-```javascript
-function verifySignature(token, timestamp, nonce, encryptText, signature) {
-  const arr = [token, timestamp, nonce, encryptText].sort();
-  const sha1 = crypto.createHash('sha1');
-  sha1.update(arr.join(''));
-  return sha1.digest('hex') === signature;
-}
-```
+HTTP 状态码：200（成功）、201（创建成功）、400（参数错误）、401（未认证）、404（不存在）、500（服务器错误）
 
 ---
 
 ## 8. WebSocket 实时通信设计
 
-### 8.1 连接架构
+### 8.1 两层 WebSocket 架构
+
+本项目涉及**两层 WebSocket**，职责分离：
 
 ```
-┌──────────────────────────────────────────┐
-│            socket.io Server               │
-│                                           │
-│  Namespace: / (default)                   │
-│                                           │
-│  用户连接: 每个登录用户一个连接            │
-│  ┌─────────────────────┐                  │
-│  │ Room: user:1        │                  │
-│  │  └─ socket_abc      │                  │
-│  └─────────────────────┘                  │
-│  ┌─────────────────────┐                  │
-│  │ Room: user:2        │                  │
-│  │  └─ socket_def      │                  │
-│  └─────────────────────┘                  │
-│                                           │
-│  Bot 房间: 按 Bot 隔离                   │
-│  ┌─────────────────────┐                  │
-│  │ Room: bot:1         │                  │
-│  │  └─ room:user:1     │  (用户加入所属   │
-│  └─────────────────────┘    Bot 的房间)   │
-└──────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                         Node.js Server                        │
+│                                                               │
+│  第一层：企微长连接                    第二层：网页实时推送    │
+│  ┌─────────────────────┐            ┌────────────────────┐    │
+│  │ WSClient (aibot)    │            │ socket.io Server   │    │
+│  │ ←→ 企微 WebSocket  │            │ ←→ 浏览器 WSS     │    │
+│  │ 网关                │            │                     │    │
+│  │ wss://openws.work   │            │ 浏览器 connected    │    │
+│  │ .weixin.qq.com      │            │                     │    │
+│  └──────────┬──────────┘            └──────────┬──────────┘    │
+│             │                                   │              │
+│             └──────────────┬────────────────────┘              │
+│                            ▼                                   │
+│                     ┌──────────────┐                           │
+│                     │  MsgService  │                           │
+│                     │  转发+持久化  │                           │
+│                     └──────────────┘                           │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### 8.2 事件定义
-
-#### 客户端 → 服务端
-
-| 事件 | 载荷 | 说明 |
-|------|------|------|
-| `join_bot` | `{ botId: number }` | 加入 Bot 房间，开始接收该 Bot 的消息 |
-| `leave_bot` | `{ botId: number }` | 离开 Bot 房间 |
-| `send_message` | `{ botId, toUser, msgType, content }` | 发送消息请求 |
-| `mark_read` | `{ botId, contactUserid }` | 标记某联系人的消息为已读 |
-
-#### 服务端 → 客户端
-
-| 事件 | 载荷 | 说明 |
-|------|------|------|
-| `new_message` | `{ id, botId, direction, msgType, content, fromUser, toUser, createdAt }` | 新消息推送 |
-| `message_status` | `{ messageId, status }` | 消息状态更新 |
-| `error` | `{ message: string }` | 错误通知 |
-| `bot_status` | `{ botId, status }` | Bot 连接状态变化 |
-
-### 8.3 消息推送流程
+### 8.2 第一层：企微长连接（WSClient）
 
 ```
-                      ┌──────────────┐
-                      │  企微回调    │
-                      │  (POST)      │
-                      └──────┬───────┘
-                             │
-                             ▼
-                      ┌──────────────┐
-                      │ 解析 & 存储  │
-                      │ 到 messages  │
-                      └──────┬───────┘
-                             │
-                             ▼
-                      ┌──────────────┐
-                      │ 查询 message │
-                      │ 所属 bot_id  │
-                      └──────┬───────┘
-                             │
-                             ▼
-                      ┌──────────────┐
-                      │ socket.io    │
-                      │ to(`bot:${id}──┐
-                      │ ).emit(...)   │
-                      └──────────────┘ │
-                             │         │
-                             ▼         ▼
-                      ┌──────────┐  ┌──────────┐
-                      │ 用户 A   │  │ 用户 B   │
-                      │ 浏览器   │  │ 浏览器   │
-                      └──────────┘  └──────────┘
+每个 Bot 建立一条独立 WebSocket 连接到企微网关
+
+Bot 1: WSClient({ botId: "aibxxx1", secret: "***" })
+  ├── connect() → wss://openws.work.weixin.qq.com
+  ├── on('message.text') → handle text messages
+  ├── on('event.enter_chat') → handle enter chat events
+  ├── sendMessage(chatid, body) → push messages proactively
+  └── disconnect() → close connection
+
+Bot 2: WSClient({ botId: "aibxxx2", secret: "***" })
+  └── ... (same structure)
 ```
 
-### 8.4 认证与连接
+### 8.3 第二层：网页实时推送（socket.io）
+
+#### 连接认证
 
 ```javascript
 // 服务端：socket.io 中间件认证
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
-  if (!token) return next(new Error('Authentication required'));
-
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     socket.userId = decoded.userId;
@@ -1055,16 +609,97 @@ io.use((socket, next) => {
     next(new Error('Invalid token'));
   }
 });
+```
 
-io.on('connection', (socket) => {
-  // 自动加入用户房间
-  socket.join(`user:${socket.userId}`);
+#### 事件定义
 
-  socket.on('join_bot', ({ botId }) => {
-    // 验证 bot 属于该用户
-    socket.join(`bot:${botId}`);
-  });
-});
+| 事件 | 方向 | 说明 |
+|------|------|------|
+| `join_bot` | 客户端 → 服务端 | 加入 Bot 房间 |
+| `leave_bot` | 客户端 → 服务端 | 离开 Bot 房间 |
+| `send_message` | 客户端 → 服务端 | 发送消息请求 |
+| `new_message` | 服务端 → 客户端 | 新消息推送 |
+| `bot_status` | 服务端 → 客户端 | Bot 连接状态变化 |
+| `mark_read` | 客户端 → 服务端 | 标记已读 |
+
+### 8.4 端到端消息流程
+
+```
+┌───────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ 浏览器  │    │socket.io │    │MsgService│    │ WSClient │    │ 企微
+├───────┤    ├──────────┤    ├──────────┤    ├──────────┤    ├──────────┤
+    │ 发送消息           │            │            │            │
+    │─send_message────►  │            │            │            │
+    │                   │─send──────► │            │            │
+    │                   │            │─wsClient.  │            │
+    │                   │            │ sendMsg()─► │─WS Frame──►│
+    │                   │            │            │◄──ACK───── │
+    │◄─message_status───│◄────── ok ─│            │            │
+    │                   │            │            │            │
+    │ 接收消息           │            │            │            │
+    │                   │            │            │◄─WS Frame──│
+    │                   │            │◄─emit──── │            │
+    │                   │            │─持久化入库  │            │
+    │◄─new_message─────│◄─push───── │            │            │
+    │                   │            │            │            │
+```
+
+### 8.5 WSClient 连接管理
+
+```javascript
+class BotConnectionPool {
+  // Bot ID → WSClient 映射
+  private clients = new Map();
+
+  async connect(bot) {
+    const wsClient = new WSClient({ botId: bot.bot_id, secret: bot.secret });
+
+    wsClient.on('connected', () => {
+      console.log(`Bot ${bot.id} 已连接`);
+      this.updateStatus(bot.id, 'connected');
+      this.pushBotStatus(bot.id, 'connected');
+    });
+
+    wsClient.on('authenticated', () => {
+      console.log(`Bot ${bot.id} 认证成功`);
+    });
+
+    wsClient.on('disconnected', (reason) => {
+      console.log(`Bot ${bot.id} 断开: ${reason}`);
+      this.updateStatus(bot.id, 'disconnected');
+      this.pushBotStatus(bot.id, 'disconnected');
+    });
+
+    wsClient.on('error', (error) => {
+      console.error(`Bot ${bot.id} 错误:`, error);
+    });
+
+    wsClient.on('message.text', (frame) => {
+      this.handleMessage(bot.id, frame);
+    });
+
+    wsClient.on('event.enter_chat', (frame) => {
+      console.log(`用户 ${frame.body.from.userid} 进入会话`);
+    });
+
+    wsClient.connect();
+    this.clients.set(bot.id, wsClient);
+  }
+
+  async disconnect(botId) {
+    const client = this.clients.get(botId);
+    if (client) {
+      client.disconnect();
+      this.clients.delete(botId);
+    }
+  }
+
+  async sendMessage(botId, chatid, body) {
+    const client = this.clients.get(botId);
+    if (!client) throw new Error('Bot not connected');
+    return client.sendMessage(chatid, body);
+  }
+}
 ```
 
 ---
@@ -1078,8 +713,8 @@ io.on('connection', (socket) => {
 | `/login` | 登录页 | 用户名密码登录 |
 | `/register` | 注册页 | 新用户注册 |
 | `/` | Bot 选择器 | 显示已绑定的 Bot 列表，选择进入聊天 |
-| `/chat/:botId` | 主聊天页面 | 聊天界面 + 联系人列表 |
-| `/bots/manage` | Bot 管理页面 | 增删改查 Bot 配置 |
+| `/chat/:botId` | 主聊天页面 | 聊天界面 + 最近联系人列表 |
+| `/bots/manage` | Bot 管理页面 | 增删改查 Bot 配置（botId + secret） |
 
 ### 9.2 组件树
 
@@ -1091,7 +726,7 @@ App
 │
 └── MainLayout (需要认证)
     ├── Sidebar
-    │   ├── BotSelector (Bot 列表 + 快速切换)
+    │   ├── BotSelector (Bot 列表 + 在线状态指示灯)
     │   ├── BotManageLink (进入管理页)
     │   └── UserInfo (当前用户信息 + 退出)
     │
@@ -1106,23 +741,21 @@ App
     │       │   ├── MessageItem (气泡样式)
     │       │   │   ├── TextMessage
     │       │   │   ├── ImageMessage
+    │       │   │   ├── MarkdownMessage
     │       │   │   └── FileMessage
     │       │   └── LoadMore (加载历史消息)
     │       └── MessageInput
-    │           ├── TextInput (输入框 + 发送按钮)
+    │           ├── TextInput (支持 Markdown 输入 + 发送)
     │           ├── ImageUpload (发送图片)
     │           └── FileUpload (发送文件)
     │
     └── BotManagePage
         ├── BotList
-        │   └── BotCard (Bot 概览卡片)
+        │   └── BotCard (Bot 概览卡片 + 在线状态)
         └── BotForm (添加/编辑 Bot 的弹窗表单)
-            ├── CorpidInput
-            ├── AgentIdInput
-            ├── SecretInput
-            ├── TokenInput
-            ├── EncodingAESKeyInput
-            └── VerifyButton (验证联通性)
+            ├── BotIdInput (企微后台获取的 BotID)
+            ├── SecretInput (企微后台获取的 Secret)
+            └── VerifyButton (测试连接 — 尝试建立 WebSocket 并发送测试消息)
 ```
 
 ### 9.3 聊天界面布局示意图
@@ -1133,22 +766,22 @@ App
 │  ┌──────┐  ┌──────────────────────────────┐      │
 │  │  Bot │  │  聊天主区域                     │      │
 │  │ 切换  │  │   ┌────────────────────────┐  │      │
-│  │      │  │   │  联系人: 张三            │  │      │
-│  │  ● 客 │  │   ├────────────────────────┤  │      │
+│  │      │  │   │  📞 张三               │  │      │
+│  │  🟢 客 │  │   ├────────────────────────┤  │      │
 │  │  服Bot│  │   │                        │  │      │
 │  │      │  │   │  上午 10:30              │  │      │
 │  │      │  │   │  ┌──────────────┐       │  │      │
 │  │      │  │   │  │ 你好，我想咨  │← 收到 │  │      │
 │  │  ─── │  │   │  │ 询一下       │       │  │      │
 │  │      │  │   │  └──────────────┘       │  │      │
-│  │  联系 │  │   │       ┌──────────┐     │  │      │
-│  │  人   │  │   │       │您好，请  │→ 发送 │  │      │
-│  │       │  │   │       │问有什么  │      │  │      │
-│  │  ● 张 │  │   │       │可以帮您  │      │  │      │
+│  │  最近 │  │   │       ┌──────────┐     │  │      │
+│  │  联系人│  │   │       │**您好**  │→ 发送 │  │      │
+│  │       │  │   │       │请问有什么│      │  │      │
+│  │  📝 张│  │   │       │可以帮您  │      │  │      │
 │  │  三   │  │   │       └──────────┘     │  │      │
-│  │  ● 李 │  │   │                        │  │      │
+│  │  📝 李│  │   │                        │  │      │
 │  │  四   │  │   ├────────────────────────┤  │      │
-│  │       │  │   │  [输入消息...]  📎 📷 ➤ │  │      │
+│  │       │  │   │  [支持 Markdown...] 📎📷➤ │  │      │
 │  └──────┘  │   └────────────────────────┘  │      │
 │            └──────────────────────────────┘      │
 └─────────────────────────────────────────────────┘
@@ -1169,29 +802,27 @@ wecom-bot-webchat/
 │   └── design.md                # 本设计方案文档
 │
 ├── server/                      # 后端代码
-│   ├── index.js                 # 入口文件，启动 Express + socket.io
+│   ├── index.js                 # 入口文件
 │   ├── config.js                # 配置（从环境变量读取）
 │   │
 │   ├── routes/                  # HTTP 路由
 │   │   ├── auth.js              # 认证路由（登录/注册）
 │   │   ├── bots.js              # Bot 管理路由
 │   │   ├── messages.js          # 消息路由
-│   │   ├── contacts.js          # 联系人路由
-│   │   └── callback.js          # 企业微信回调路由
+│   │   └── contacts.js          # 联系人路由
 │   │
 │   ├── services/                # 业务逻辑层
 │   │   ├── authService.js       # 认证服务
 │   │   ├── botService.js        # Bot 管理服务
-│   │   ├── msgService.js        # 消息服务
-│   │   ├── wecomApi.js          # 企业微信 API 代理
-│   │   └── callbackService.js   # 回调处理服务
+│   │   ├── msgService.js        # 消息服务（核心）
+│   │   └── wecomClient.js       # WSClient 连接池管理（核心）
 │   │
 │   ├── middleware/              # Express 中间件
 │   │   ├── auth.js              # JWT 认证中间件
 │   │   ├── errorHandler.js      # 全局错误处理
 │   │   └── validate.js          # 请求验证中间件
 │   │
-│   ├── socket/                  # WebSocket 相关
+│   ├── socket/                  # socket.io 相关
 │   │   ├── index.js             # socket.io 初始化 + 事件注册
 │   │   └── auth.js              # socket.io 认证中间件
 │   │
@@ -1200,17 +831,15 @@ wecom-bot-webchat/
 │   │   ├── migrate.js           # 数据库迁移脚本
 │   │   └── schema.sql           # 完整建表 SQL
 │   │
-│   ├── utils/                   # 工具函数
-│   │   ├── crypto.js            # AES 加解密工具
-│   │   ├── xmlParser.js         # XML 解析/构建
+│   ├── utils/
 │   │   └── logger.js            # 日志工具
 │   │
-│   └── scheduler/               # 定时任务
-│       └── tokenRefresh.js      # Access Token 定时刷新
+│   └── scheduler/
+│       └── reconnection.js      # Bot 重连管理器
 │
 ├── client/                      # 前端代码 (Vite + React)
 │   ├── index.html               # HTML 入口
-│   ├── vite.config.js           # Vite 配置（含 API 代理）
+│   ├── vite.config.js           # Vite 配置
 │   ├── package.json             # 前端依赖
 │   │
 │   ├── src/
@@ -1218,13 +847,13 @@ wecom-bot-webchat/
 │   │   ├── App.jsx              # 根组件 + 路由配置
 │   │   │
 │   │   ├── api/                 # API 请求封装
-│   │   │   ├── client.js        # Axios 实例（拦截器）
+│   │   │   ├── client.js        # Axios 实例
 │   │   │   ├── auth.js          # 认证 API
 │   │   │   ├── bots.js          # Bot API
 │   │   │   └── messages.js      # 消息 API
 │   │   │
-│   │   ├── socket/              # WebSocket 客户端
-│   │   │   ├── index.js         # socket.io 连接管理
+│   │   ├── socket/              # socket.io 客户端
+│   │   │   ├── index.js         # 连接管理
 │   │   │   └── events.js        # 事件处理
 │   │   │
 │   │   ├── pages/               # 页面组件
@@ -1240,7 +869,7 @@ wecom-bot-webchat/
 │   │   │   ├── ContactList.jsx  # 联系人列表
 │   │   │   ├── ContactItem.jsx  # 联系人条目
 │   │   │   ├── BotSelector.jsx  # Bot 切换器
-│   │   │   ├── BotForm.jsx      # Bot 配置表单
+│   │   │   ├── BotForm.jsx      # Bot 配置表单（botId + secret）
 │   │   │   └── ProtectedRoute.jsx # 认证保护路由
 │   │   │
 │   │   ├── hooks/               # 自定义 Hooks
@@ -1248,46 +877,35 @@ wecom-bot-webchat/
 │   │   │   ├── useMessages.js   # 消息状态管理
 │   │   │   └── useAuth.js       # 认证状态管理
 │   │   │
-│   │   ├── context/             # React Context
-│   │   │   ├── AuthContext.jsx  # 认证上下文
-│   │   │   └── SocketContext.jsx# WebSocket 上下文
-│   │   │
 │   │   └── styles/              # 样式文件
-│   │       ├── global.css       # 全局样式
-│   │       └── chat.css         # 聊天界面样式
+│   │       ├── global.css
+│   │       └── chat.css
 │   │
-│   └── public/                  # 静态资源
+│   └── public/
 │       └── favicon.ico
 │
-└── scripts/                     # 部署脚本
-    ├── deploy.sh                # 部署脚本
-    └── seed.sql                 # 初始数据（可选）
+└── scripts/
+    └── deploy.sh                # 部署脚本
 ```
 
-### 项目依赖 (server/package.json)
+### 依赖清单
 
 ```json
+// server/package.json
 {
   "dependencies": {
     "express": "^4.21.x",
     "socket.io": "^4.8.x",
     "better-sqlite3": "^11.x",
-    "wechat-enterprise": "^1.x",
+    "@wecom/aibot-node-sdk": "^1.0.7",    // 企微智能机器人 SDK（核心）
     "jsonwebtoken": "^9.x",
     "bcryptjs": "^2.4.x",
     "cors": "^2.8.x",
-    "morgan": "^1.10.x",
-    "express-validator": "^7.x"
-  },
-  "devDependencies": {
-    "nodemon": "^3.x"
+    "morgan": "^1.10.x"
   }
 }
-```
 
-### 前端依赖 (client/package.json)
-
-```json
+// client/package.json
 {
   "dependencies": {
     "react": "^19.x",
@@ -1324,7 +942,13 @@ wecom-bot-webchat/
                        ▼
               ┌─────────────────┐
               │  Node.js App    │  ← systemd 管理，开机自启
-              │  127.0.0.1:3001  │
+              │  127.0.0.1:3001 │
+              ├─────────────────┤
+              │  WSClient (每个 │
+              │  Bot 一条长连接) │
+              │  ─→ wss://     │
+              │  openws.work   │
+              │  .weixin.qq.com│
               └────────┬────────┘
                        │
                        ▼
@@ -1336,24 +960,16 @@ wecom-bot-webchat/
 
 ### 11.2 Caddy 配置
 
-文件：`/etc/caddy/Caddyfile`
-
 ```caddy
 chat.zeaho.site {
-    # 反向代理到 Node.js 应用
     reverse_proxy 127.0.0.1:3001 {
-        # WebSocket 支持
         header_up Upgrade {http.request.header.Upgrade}
         header_up Connection {http.request.header.Connection}
     }
-
-    # 日志
     log {
         output file /var/log/caddy/wecom-chat.log
         format json
     }
-
-    # 安全头
     header {
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
@@ -1362,11 +978,7 @@ chat.zeaho.site {
 }
 ```
 
-> **注意**：如果 Caddy 使用全局配置管理多个站点，只需在已有的 Caddyfile 中添加上述站点块并执行 `caddy reload` 即可。本服务器的 Caddy 版本为 v2.11.3，以上配置语法完全兼容。
-
 ### 11.3 systemd 服务单元
-
-文件：`/etc/systemd/system/wecom-bot-webchat.service`
 
 ```ini
 [Unit]
@@ -1377,144 +989,47 @@ After=network.target
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/wecom-bot-webchat/server
-ExecStart=/usr/bin/node /var/www/wecom-bot-webchat/server/index.js
+WorkingDirectory=/var/www/wecom-bot-webchat
+ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=10
-
-# 环境变量
 Environment=NODE_ENV=production
 Environment=PORT=3001
 Environment=JWT_SECRET=your-jwt-secret-here
 Environment=DB_PATH=/var/data/wecom-chat.db
-
-# 日志
 StandardOutput=journal
 StandardError=journal
-
-# 安全
-NoNewPrivileges=true
-ProtectSystem=strict
-PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-操作命令：
+### 11.4 部署脚本
 
 ```bash
-# 部署二进制/代码后
-sudo systemctl daemon-reload
-sudo systemctl enable wecom-bot-webchat
-sudo systemctl start wecom-bot-webchat
-
-# 查看状态
-sudo systemctl status wecom-bot-webchat
-
-# 查看日志
-sudo journalctl -u wecom-bot-webchat -f
-
-# 更新后重启
-sudo systemctl restart wecom-bot-webchat
-```
-
-### 11.4 部署脚本示例
-
-文件：`scripts/deploy.sh`
-
-```bash
+# scripts/deploy.sh
 #!/bin/bash
 set -e
-
 APP_DIR="/var/www/wecom-bot-webchat"
 DATA_DIR="/var/data"
 REPO_URL="https://github.com/wutao667/wecom-bot-webchat.git"
 
-echo "=== Deploying WeCom Bot WebChat ==="
-
-# 1. 创建目录
 sudo mkdir -p $APP_DIR $DATA_DIR
 
-# 2. 拉取代码
 if [ -d "$APP_DIR/.git" ]; then
-    cd $APP_DIR
-    git pull
+    cd $APP_DIR && git pull
 else
-    git clone $REPO_URL $APP_DIR
-    cd $APP_DIR
+    git clone $REPO_URL $APP_DIR && cd $APP_DIR
 fi
 
-# 3. 安装服务端依赖
 cd $APP_DIR/server
 npm install --production
 
-# 4. 构建前端
 cd $APP_DIR/client
-npm install
-npm run build
-# 构建产物输出到 server/public/
+npm install && npm run build
 
-# 5. 配置环境变量
-if [ ! -f "$APP_DIR/server/.env" ]; then
-    cp $APP_DIR/server/.env.example $APP_DIR/server/.env
-    echo "⚠️  Please configure $APP_DIR/server/.env"
-fi
-
-# 6. 重启服务
 sudo systemctl daemon-reload
 sudo systemctl restart wecom-bot-webchat
-
-echo "=== Deploy complete ==="
-```
-
-### 11.5 Nginx 备选配置（如需）
-
-虽然目前使用 Caddy，但作为备选方案也提供 Nginx 配置：
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name chat.zeaho.site;
-
-    ssl_certificate     /etc/ssl/certs/zeaho.site.pem;
-    ssl_certificate_key /etc/ssl/private/zeaho.site.key;
-
-    location / {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-
-        # WebSocket 支持
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-### 11.6 环境变量配置
-
-文件：`server/.env`
-
-```env
-# 服务端口
-PORT=3001
-
-# JWT 密钥（生产环境务必修改为随机字符串）
-JWT_SECRET=change-this-to-a-random-secret
-
-# 数据库路径
-DB_PATH=/var/data/wecom-chat.db
-
-# Node 环境
-NODE_ENV=production
-
-# 日志级别
-LOG_LEVEL=info
 ```
 
 ---
@@ -1528,7 +1043,7 @@ Phase 1 (MVP)    Phase 2 (增强)     Phase 3 (完善)
 ─────────────────────────────────────────────────►
 │                  │                    │
 ├── 核心功能 ──────┤── 功能增强 ───────┤── 体验优化 ──→
-├── Week 1-2      ├── Week 3-4        ├── Week 5-6
+├── 第 1-2 周      ├── 第 3-4 周       ├── 第 5-6 周
 ```
 
 ### 12.2 详细里程碑
@@ -1537,18 +1052,18 @@ Phase 1 (MVP)    Phase 2 (增强)     Phase 3 (完善)
 
 | 里程碑 | 时间 | 交付物 |
 |--------|------|--------|
-| M1.1 项目骨架 | 第 1 周 前 3 天 | Express 项目初始化，SQLite 建表，Vite + React 脚手架 |
-| M1.2 用户认证 | 第 1 周 中 2 天 | 注册 + 登录 API，前端登录页，JWT 中间件 |
-| M1.3 Bot 管理 | 第 1 周 后 2 天 | Bot CRUD API，前端 Bot 管理页 |
-| M1.4 回调接收 | 第 2 周 前 3 天 | 回调 URL 验证，消息解密 + 入库 |
-| M1.5 消息发送 | 第 2 周 中 2 天 | 通过企微 API 发送消息 + 消息列表 API |
-| M1.6 基础 UI | 第 2 周 后 2 天 | 聊天界面（联系人列表、消息列表、输入框）+ WebSocket 实时推送 |
+| M1.1 项目骨架 | 第 1 周前 3 天 | Express 项目初始化，SQLite 建表，Vite + React 脚手架 |
+| M1.2 用户认证 | 第 1 周中 2 天 | 注册 + 登录 API，前端登录页，JWT 中间件 |
+| M1.3 Bot 管理 + WebSocket 连接 | 第 1 周后 2 天 | Bot CRUD API + **WSClient 长连接集成**，前端 Bot 管理页 |
+| M1.4 消息接收 | 第 2 周前 2 天 | WSClient 事件监听 → 入库 → socket.io 推送到前端 |
+| M1.5 消息发送 | 第 2 周中 2 天 | 前端发送 → `wsClient.sendMessage()` → 企微用户收到 |
+| M1.6 聊天 UI | 第 2 周后 2 天 | 完整聊天界面（联系人列表 + 消息列表 + 输入框） |
 
 **Phase 1 验收标准：**
 - ✅ 用户可注册登录
-- ✅ 用户可添加 Bot 配置
-- ✅ Bot 回调 URL 验证通过
-- ✅ 网页可向企微用户发送文本消息
+- ✅ 用户可添加 Bot（botId + secret），自动建立 WebSocket 长连接
+- ✅ Bot 连接状态实时显示（在线/离线）
+- ✅ 网页可向企微用户发送 Markdown 消息
 - ✅ 企微用户发消息 → 网页实时展示
 - ✅ 消息记录持久化并可查询
 
@@ -1556,105 +1071,55 @@ Phase 1 (MVP)    Phase 2 (增强)     Phase 3 (完善)
 
 | 里程碑 | 时间 | 交付物 |
 |--------|------|--------|
-| M2.1 媒体消息 | 第 3 周 前 3 天 | 图片上传 + 发送，文件消息支持 |
-| M2.2 联系人同步 | 第 3 周 中 2 天 | 从企微同步通讯录，联系人搜索 |
-| M2.3 最近会话 | 第 3 周 后 2 天 | 最近会话列表、未读数标记 |
-| M2.4 多 Bot 切换 | 第 4 周 前 2 天 | 侧边栏 Bot 切换，数据隔离 |
-| M2.5 Bot 状态监控 | 第 4 周 后 3 天 | 联通性检测，异常告警，自动重连 |
+| M2.1 图片消息 | 第 3 周前 2 天 | 上传图片 → 前端预览 → WSClient 上传临时素材 → 发送图片 |
+| M2.2 文件消息 | 第 3 周中 2 天 | 类似图片流程 |
+| M2.3 流式回复 | 第 3 周后 3 天 | 支持打字机效果回复（replyStream） |
+| M2.4 多 Bot 切换 | 第 4 周前 2 天 | 侧边栏 Bot 切换，数据隔离 |
+| M2.5 连接监控 | 第 4 周后 3 天 | 连接状态可视化，重连历史，错误通知 |
 
 #### Phase 3 — 体验优化（第 5-6 周）
 
 | 里程碑 | 时间 | 交付物 |
 |--------|------|--------|
-| M3.1 消息搜索 | 第 5 周 前 2 天 | 全局消息搜索 |
-| M3.2 消息引用 | 第 5 周 中 2 天 | 消息引用回复 |
-| M3.3 暗色模式 | 第 5 周 后 2 天 | 主题切换 |
-| M3.4 性能优化 | 第 6 周 前 2 天 | 消息分页加载，虚拟列表 |
-| M3.5 数据备份 | 第 6 周 后 3 天 | SQLite 定时备份，恢复脚本 |
+| M3.1 消息搜索 | 第 5 周前 2 天 | 全局消息搜索 |
+| M3.2 消息引用 | 第 5 周中 2 天 | 消息引用回复 |
+| M3.3 暗色模式 | 第 5 周后 2 天 | 主题切换 |
+| M3.4 虚拟列表 | 第 6 周前 2 天 | 大量消息时的虚拟滚动 |
+| M3.5 数据备份 | 第 6 周后 3 天 | SQLite 定时备份，恢复脚本 |
 
 ---
 
 ## 13. 风险与应对措施
 
-### 13.1 风险管理矩阵
-
 | 编号 | 风险 | 概率 | 影响 | 等级 | 应对措施 |
 |------|------|------|------|------|----------|
-| R-01 | 企微 API 调用频率限制 | 高 | 中 | **高** | 实现 Token 缓存 + 请求队列 + 指数退避重试 |
-| R-02 | Access Token 过期导致消息发送失败 | 中 | 中 | **中** | 提前刷新（过期前 10 分钟），请求失败自动重试获取新 Token |
-| R-03 | 回调消息重复推送 | 中 | 低 | **中** | 使用 msg_id 去重（数据库 UNIQUE 约束） |
-| R-04 | WebSocket 连接断开 | 高 | 中 | **高** | socket.io 自动重连 + 重连后消息同步 |
-| R-05 | SQLite 并发写入冲突 | 低 | 中 | **低** | WAL 模式 + 串行化写入 better-sqlite3 |
-| R-06 | 企微 API 接口变更 | 低 | 高 | **中** | 封装 API 代理层，变更时只改一处 |
-| R-07 | Secret / EncodingAESKey 泄露 | 低 | 高 | **中** | 数据库加密存储敏感字段，配置文件 600 权限 |
-| R-08 | 域名/证书过期 | 低 | 高 | **中** | Caddy 自动续期，配置证书到期告警 |
-| R-09 | 服务器磁盘空间不足 | 中 | 中 | **中** | 定期清理旧消息，监控磁盘使用率 |
-| R-10 | XSS/注入攻击 | 低 | 高 | **中** | 输入清洗，参数化 SQL 查询，CSP 头 |
+| R-01 | WebSocket 连接断开 | 中 | 高 | **高** | SDK 内置自动重连（指数退避） + 前端连接状态提示 |
+| R-02 | 企微 WebSocket 服务不稳定 | 低 | 高 | **中** | 重连机制 + 错误日志告警 |
+| R-03 | 消息重复推送 | 中 | 低 | **中** | 使用 wx_msg_id 去重（数据库 UNIQUE 约束） |
+| R-04 | socket.io 断开 | 高 | 中 | **中** | socket.io 自动重连 + 重连后同步未读消息 |
+| R-05 | SQLite 并发写入 | 低 | 中 | **低** | WAL 模式 + better-sqlite3 串行化写入 |
+| R-06 | Bot Secret 泄露 | 低 | 高 | **中** | 数据库加密存储敏感字段，配置文件 600 权限 |
+| R-07 | 域名/证书过期 | 低 | 高 | **中** | Caddy 自动续期 |
+| R-08 | 服务器磁盘空间满 | 中 | 中 | **中** | 定期清理旧消息，监控磁盘使用率 |
 
-### 13.2 关键风险应对详述
+### 关键应对
 
-#### R-01: 企微 API 调用频率
+**R-01 WebSocket 断开：** SDK 内置指数退避重连（默认最大 10 次），前端实时展示 Bot 在线状态。重连后自动恢复消息收发。
 
-企业微信 API 限制为 600 次/分钟（每应用），超限会返回 `errcode: 45009`。应对方案：
+**R-03 消息重复：** 使用企业微信消息 msgid + 数据库 UNIQUE 索引防重。
 
-```javascript
-class RateLimiter {
-  constructor(maxPerMinute = 600) {
-    this.queue = [];
-    this.windowMs = 60000;
-    this.maxPerWindow = maxPerMinute;
-  }
-
-  async call(fn) {
-    // 使用滑动窗口限流
-    const now = Date.now();
-    this.queue = this.queue.filter(t => now - t < this.windowMs);
-    if (this.queue.length >= this.maxPerWindow) {
-      const waitMs = this.queue[0] + this.windowMs - now;
-      await sleep(waitMs);
-    }
-    this.queue.push(Date.now());
-    return fn();
-  }
-}
-```
-
-#### R-04: WebSocket 连接管理
-
-```javascript
-// 客户端 socket.io 配置
-const socket = io('https://chat.zeaho.site', {
-  auth: { token: jwtToken },
-  reconnection: true,
-  reconnectionAttempts: Infinity,
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 30000,
-  randomizationFactor: 0.5,
-});
-
-// 重连后重新加入 Bot 房间
-socket.on('connect', () => {
-  const cachedBots = getJoinedBots();
-  cachedBots.forEach(botId => {
-    socket.emit('join_bot', { botId });
-  });
-});
-```
+**R-06 Secret 泄露：** 数据库加密存储 secret 字段，系统环境变量管理 JWT 密钥，配置文件 600 权限。
 
 ---
 
 ## 附录
 
-### A. 数据库迁移脚本
+### A. 完整建表 SQL
 
 ```sql
--- server/db/schema.sql
-
--- 启用 WAL 模式提升并发性能
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 
--- 用户表
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     username      TEXT    UNIQUE NOT NULL CHECK(length(username) >= 3),
@@ -1664,102 +1129,70 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
--- Bot 配置表
 CREATE TABLE IF NOT EXISTS bots (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name             TEXT    NOT NULL,
-    corpid           TEXT    NOT NULL,
-    agentid          INTEGER NOT NULL,
-    secret           TEXT    NOT NULL,
-    token            TEXT    NOT NULL,
-    encoding_aeskey  TEXT    NOT NULL CHECK(length(encoding_aeskey) = 43),
-    callback_url     TEXT    DEFAULT NULL,
-    status           TEXT    DEFAULT 'inactive' CHECK(status IN ('active','inactive','error')),
-    last_error       TEXT    DEFAULT NULL,
-    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name          TEXT    NOT NULL,
+    bot_id        TEXT    NOT NULL,
+    secret        TEXT    NOT NULL,
+    status        TEXT    DEFAULT 'disconnected' CHECK(status IN ('connected','disconnected','error')),
+    last_error    TEXT    DEFAULT NULL,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_bots_user_id ON bots(user_id);
 
--- 消息表
 CREATE TABLE IF NOT EXISTS messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     bot_id      INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
     direction   TEXT    NOT NULL CHECK(direction IN ('outgoing','incoming')),
-    msg_type    TEXT    NOT NULL CHECK(msg_type IN ('text','image','file','voice','video','markdown')),
+    msg_type    TEXT    NOT NULL CHECK(msg_type IN ('text','markdown','image','file','voice','video','mixed')),
     content     TEXT    NOT NULL,
     from_user   TEXT    NOT NULL,
-    to_user     TEXT    NOT NULL,
+    to_user     TEXT    NOT NULL DEFAULT '',
     msg_id      TEXT    DEFAULT NULL,
-    status      TEXT    DEFAULT 'sent' CHECK(status IN ('sending','sent','delivered','failed')),
+    wx_msg_id   TEXT    DEFAULT NULL,
+    status      TEXT    DEFAULT 'sent' CHECK(status IN ('sending','sent','delivered','failed','read')),
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX idx_messages_bot_id   ON messages(bot_id);
-CREATE INDEX idx_messages_created  ON messages(bot_id, created_at DESC);
-CREATE UNIQUE INDEX idx_messages_msg_id ON messages(msg_id) WHERE msg_id IS NOT NULL;
-
--- Access Token 缓存表
-CREATE TABLE IF NOT EXISTS access_tokens (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    bot_id        INTEGER UNIQUE NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
-    access_token  TEXT    NOT NULL,
-    expires_at    TEXT    NOT NULL,
-    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
--- 联系人缓存表
-CREATE TABLE IF NOT EXISTS contacts (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    bot_id      INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
-    userid      TEXT    NOT NULL,
-    name        TEXT    NOT NULL,
-    avatar      TEXT    DEFAULT NULL,
-    department  TEXT    DEFAULT NULL,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(bot_id, userid)
-);
-CREATE INDEX idx_contacts_bot_id ON contacts(bot_id);
+CREATE INDEX idx_messages_bot_id  ON messages(bot_id);
+CREATE INDEX idx_messages_created ON messages(bot_id, created_at DESC);
+CREATE UNIQUE INDEX idx_messages_wx_msg_id ON messages(wx_msg_id) WHERE wx_msg_id IS NOT NULL;
 ```
 
-### B. 企微回调数据结构
+### B. 智能机器人配置流程
 
-```xml
-<!-- 文本消息回调 XML 示例 -->
-<xml>
-  <ToUserName><![CDATA[ww123456789]]></ToUserName>
-  <FromUserName><![CDATA[zhangsan]]></FromUserName>
-  <CreateTime>1719900000</CreateTime>
-  <MsgType><![CDATA[text]]></MsgType>
-  <Content><![CDATA[你好]]></Content>
-  <MsgId>1234567890123456</MsgId>
-  <AgentID>1000001</AgentID>
-</xml>
+在企业微信后台配置智能机器人的步骤：
 
-<!-- 图片消息回调 XML 示例 -->
-<xml>
-  <ToUserName><![CDATA[ww123456789]]></ToUserName>
-  <FromUserName><![CDATA[zhangsan]]></FromUserName>
-  <CreateTime>1719900000</CreateTime>
-  <MsgType><![CDATA[image]]></MsgType>
-  <PicUrl><![CDATA[http://shp.qpic.cn/...]]></PicUrl>
-  <MediaId><![CDATA[media_id_string]]></MediaId>
-  <MsgId>1234567890123456</MsgId>
-  <AgentID>1000001</AgentID>
-</xml>
-```
+1. 登录企业微信管理后台 → 应用管理 → 智能机器人
+2. 点击"创建智能机器人"
+3. 连接方式选择 **"使用长连接"**
+4. 创建完成后获取 BotID 和 Secret
+5. 在本网站添加 Bot 时填入这两个参数即可
 
-### C. 参考文档
+### C. `@wecom/aibot-node-sdk` 关键 API
 
-- [企业微信开发文档 — 回调配置](https://developer.work.weixin.qq.com/document/path/90968)
-- [企业微信开发文档 — 消息推送](https://developer.work.weixin.qq.com/document/path/90239)
-- [企业微信开发文档 — 发送消息](https://developer.work.weixin.qq.com/document/path/90236)
-- [企业微信开发文档 — 获取 Access Token](https://developer.work.weixin.qq.com/document/path/91039)
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `new WSClient(options)` | `{ botId, secret, ... }` | 创建客户端 |
+| `wsClient.connect()` | 无 | 建立 WebSocket 连接 |
+| `wsClient.disconnect()` | 无 | 断开连接 |
+| `wsClient.sendMessage(chatid, body)` | userid + 消息体 | 主动推送消息 |
+| `wsClient.reply(frame, body)` | 回调帧 + 消息体 | 回复消息 |
+| `wsClient.replyStream(frame, id, content, finish)` | 帧 + 流ID + 内容 + 结束标记 | 流式回复 |
+| `wsClient.replyMedia(frame, type, mediaId)` | 帧 + 类型 + 素材ID | 回复媒体 |
+| `wsClient.sendMediaMessage(chatid, type, mediaId)` | 会话ID + 类型 + 素材ID | 主动发送媒体 |
+| `wsClient.uploadMedia(buffer, options)` | 文件Buffer + 选项 | 上传临时素材 |
+| `wsClient.downloadFile(url, aesKey?)` | URL + 密钥 | 下载文件 |
+
+### D. 参考文档
+
+- [@wecom/aibot-node-sdk 企业微信智能机器人 SDK](https://www.npmjs.com/package/@wecom/aibot-node-sdk)
+- [企业微信智能机器人开发文档](https://developer.work.weixin.qq.com/document/path/99110)
 - [socket.io 官方文档](https://socket.io/docs/v4/)
 - [better-sqlite3 文档](https://github.com/WiseLibs/better-sqlite3)
 
 ---
 
-> 本文档为 WeCom Bot WebChat 项目的完整设计方案。  
-> 任何对架构的修改需同步更新本文件。
+> 本文档为 WeCom Bot WebChat 项目的完整设计方案（WebSocket 长连接版）。
+> 方案基于 `@wecom/aibot-node-sdk`，与 OpenClaw 企业微信 bot 的绑定方式一致。
