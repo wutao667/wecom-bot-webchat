@@ -119,8 +119,9 @@ export default function MessageList({ botId, contact, onMessagesUpdate }) {
               {formatTime(msg.created_at)}
             </div>
             <div
+              className="message-bubble"
               style={{
-                maxWidth: '70%',
+                maxWidth: '85%',
                 padding: '10px 14px',
                 borderRadius: '8px',
                 background: isIncoming ? '#fff' : '#95ec69',

@@ -29,6 +29,7 @@ export default function ContactList({ contacts = [], selectedUserId, onSelect, o
           <List.Item
             key={item.userid}
             onClick={() => onSelect(item)}
+            className={`contact-list-item ${selectedUserId === item.userid ? 'selected' : ''}`}
             style={{
               cursor: 'pointer',
               padding: '10px 12px',

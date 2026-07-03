@@ -23,7 +23,7 @@ export default function MessageInput({ onSend, loading }) {
   };
 
   return (
-    <div style={{
+    <div className="message-input-area" style={{
       padding: '8px 16px 16px',
       borderTop: '1px solid #e8e8e8',
       background: '#fff',

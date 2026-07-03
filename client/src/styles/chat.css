@@ -85,3 +85,45 @@
 .ant-select-selection-item .ant-badge {
   margin-right: 4px;
 }
+
+/* ========== Mobile responsive styles ========== */
+
+/* Contact list mobile optimization */
+@media (max-width: 768px) {
+  .contact-list-item {
+    padding: 14px 16px !important;
+  }
+
+  .contact-list-item .ant-typography {
+    font-size: 15px !important;
+  }
+
+  .contact-list-item .ant-typography-secondary {
+    font-size: 13px !important;
+  }
+
+  /* Larger avatar for touch */
+  .contact-list-item > div > div:first-child {
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 18px !important;
+  }
+}
+
+/* Message bubble mobile */
+@media (max-width: 768px) {
+  .message-bubble {
+    max-width: 85% !important;
+  }
+}
+
+/* Input area sticky bottom on mobile */
+@media (max-width: 768px) {
+  .message-input-area {
+    padding: 10px 12px 12px !important;
+  }
+
+  .message-input-area button {
+    min-height: 40px;
+  }
+}
