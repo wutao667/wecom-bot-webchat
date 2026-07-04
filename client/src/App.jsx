@@ -181,7 +181,11 @@ function MainLayout({ user, onLogout }) {
   const loadContacts = async (botId) => {
     try {
       const res = await getContacts(botId);
-      setContacts(res.data || []);
+      const list = res.data || [];
+      setContacts(list);
+      if (list.length > 0) {
+        setSelectedContact(list[0]);
+      }
     } catch (err) {
       console.error('Failed to load contacts:', err);
     }

@@ -192,10 +192,12 @@ export default function BotManage({ user, onBotsChange }) {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
+      width: 180,
+      ellipsis: true,
       render: (text) => (
         <Space>
           <RobotOutlined />
-          <Typography.Text strong>{text}</Typography.Text>
+          <Typography.Text strong ellipsis>{text}</Typography.Text>
         </Space>
       ),
     },
@@ -203,6 +205,8 @@ export default function BotManage({ user, onBotsChange }) {
       title: 'Bot ID',
       dataIndex: 'bot_id',
       key: 'bot_id',
+      width: 140,
+      ellipsis: true,
       render: (text) => (
         <Typography.Text code copyable style={{ fontSize: 12 }}>
           {text}
@@ -213,6 +217,7 @@ export default function BotManage({ user, onBotsChange }) {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 80,
       render: (status) => (
         <Tag color={statusColor(status)}>{statusLabel(status)}</Tag>
       ),
@@ -221,6 +226,7 @@ export default function BotManage({ user, onBotsChange }) {
       title: '错误信息',
       dataIndex: 'last_error',
       key: 'last_error',
+      width: 200,
       ellipsis: true,
       render: (text) => text ? <Typography.Text type="danger" style={{ fontSize: 12 }}>{text}</Typography.Text> : '-',
     },
@@ -233,9 +239,9 @@ export default function BotManage({ user, onBotsChange }) {
     {
       title: '操作',
       key: 'actions',
-      width: 220,
+      width: 280,
       render: (_, record) => (
-        <Space>
+        <Space wrap={false} size={0}>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
