@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Layout, Menu, Button, Badge, Dropdown, message, Typography, Select, Drawer } from 'antd';
+import { Layout, Menu, Button, Badge, Dropdown, Typography, Select, Drawer, App as AntApp } from 'antd';
 import {
   MessageOutlined,
   SettingOutlined,
@@ -37,6 +37,7 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+  const { message } = AntApp.useApp();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -87,6 +88,7 @@ export default function App() {
 }
 
 function MainLayout({ user, onLogout }) {
+  const { message } = AntApp.useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const { botId } = useParams();
@@ -116,7 +118,12 @@ function MainLayout({ user, onLogout }) {
   const loadBots = async () => {
     try {
       const res = await getBots();
-      setBots(res.data.data || []);
+      const botList = res.data.data || [];
+      setBots(botList);
+      // Initialize bot statuses from API data (socket will update in real-time)
+      const initialStatuses = {};
+      botList.forEach(b => { initialStatuses[b.id] = b.status; });
+      setBotStatuses(initialStatuses);
     } catch (err) {
       console.error('Failed to load bots:', err);
     }

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Form, Input, Button, Card, Typography, message } from 'antd';
+import { Form, Input, Button, Card, Typography, App } from 'antd';
 import { UserOutlined, LockOutlined, RobotOutlined } from '@ant-design/icons';
 import { useAuth } from '../App';
 import { login as loginApi } from '../api/auth';
 
 export default function Login() {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const { user, login } = useAuth();
   const navigate = useNavigate();
