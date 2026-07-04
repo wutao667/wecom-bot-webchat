@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Modal, Form, Input, Space, Tag, Popconfirm, message, Typography, Empty } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, RobotOutlined, LinkOutlined, KeyOutlined, SafetyOutlined, CopyOutlined, CheckOutlined, CloseCircleOutlined, CodeOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, RobotOutlined, LinkOutlined, KeyOutlined, SafetyOutlined, CopyOutlined, CheckOutlined, CloseCircleOutlined, CodeOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { getBots, createBot, updateBot, deleteBot, reconnectBot, getBotTokens, createBotToken, deleteBotToken, getBotContacts } from '../api/bots';
 
 // Helpers
@@ -411,19 +411,29 @@ export default function BotManage({ user, onBotsChange }) {
         }}
       >
         {isMobile ? (
-          // Mobile: title is shown by App.jsx header, here we only show the add button (full-width)
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleAdd}
-            block
-            size="large"
-          >
-            添加机器人
-          </Button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            <Button 
+              type="text" 
+              icon={<ArrowLeftOutlined />} 
+              onClick={() => navigate('/')}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              返回
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleAdd}
+              block
+              size="large"
+            >
+              添加机器人
+            </Button>
+          </div>
         ) : (
           <>
             <Space>
+              <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
               <Typography.Title level={5} style={{ margin: 0 }}>机器人管理</Typography.Title>
             </Space>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
