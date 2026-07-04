@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Modal, Form, Input, Space, Tag, Popconfirm, message, Typography, Empty } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, RobotOutlined, LinkOutlined, KeyOutlined, SafetyOutlined, CopyOutlined, CheckOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, RobotOutlined, LinkOutlined, KeyOutlined, SafetyOutlined, CopyOutlined, CheckOutlined, CloseCircleOutlined, CodeOutlined } from '@ant-design/icons';
 import { getBots, createBot, updateBot, deleteBot, reconnectBot, getBotTokens, createBotToken, deleteBotToken, getBotContacts } from '../api/bots';
 
 // Helpers
@@ -151,6 +151,18 @@ export default function BotManage({ user, onBotsChange }) {
     }).catch(() => {
       message.error('复制失败');
     });
+  };
+
+  const handleCopyCurl = async (tokenValue, tokenId) => {
+    const curl = `curl -X POST ${window.location.origin}/api/message/${tokenValue} -H "Content-Type: application/json" -d '{"content":"你好，这是一条测试消息"}'`;
+    try {
+      await navigator.clipboard.writeText(curl);
+      setCopiedTokenId(tokenId);
+      setTimeout(() => setCopiedTokenId(null), 2000);
+      message.success('命令已复制到剪贴板');
+    } catch {
+      message.error('复制失败');
+    }
   };
 
   const handleReconnect = async (id) => {
@@ -569,6 +581,29 @@ export default function BotManage({ user, onBotsChange }) {
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 请复制并保存 Token，关闭弹窗后将不再完整显示。可在下方列表中重新复制。
               </Typography.Text>
+              {/* API 命令示例 */}
+              <div style={{ marginTop: 4 }}>
+                <Typography.Text strong style={{ fontSize: 13, marginBottom: 8, display: 'block' }}>
+                  调用方式
+                </Typography.Text>
+                <div
+                  style={{
+                    background: '#1e1e1e',
+                    color: '#d4d4d4',
+                    padding: '12px 16px',
+                    borderRadius: 6,
+                    fontFamily: 'SFMono-Regular, Consolas, monospace',
+                    fontSize: 12,
+                    lineHeight: 1.8,
+                    overflowX: 'auto',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {`curl -X POST ${window.location.origin}/api/message/${generatedToken} \\
+  -H "Content-Type: application/json" \\
+  -d '{"content":"你好，这是一条测试消息"}'`}
+                </div>
+              </div>
             </Space>
           </Card>
         )}
@@ -618,6 +653,15 @@ export default function BotManage({ user, onBotsChange }) {
                     style={{ padding: '0 4px' }}
                   >
                     {copiedTokenId === t.id ? '已复制' : '复制'}
+                  </Button>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={copiedTokenId === t.id ? <CheckOutlined /> : <CodeOutlined />}
+                    onClick={() => handleCopyCurl(t.token, t.id)}
+                    style={{ padding: '0 4px' }}
+                  >
+                    {copiedTokenId === t.id ? '已复制' : '命令'}
                   </Button>
                   <Popconfirm
                     title="确定删除此Token？"
