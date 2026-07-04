@@ -39,3 +39,15 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_bot_id  ON messages(bot_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(bot_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wx_msg_id ON messages(wx_msg_id) WHERE wx_msg_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id        INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    contact_userid TEXT   NOT NULL,
+    token         TEXT    NOT NULL UNIQUE,
+    name          TEXT    DEFAULT '',
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_bot_id ON api_tokens(bot_id);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens(token);

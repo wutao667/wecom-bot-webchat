@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Modal, Form, Input, Space, Tag, Popconfirm, message, Typography, Empty } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, RobotOutlined, LinkOutlined, KeyOutlined } from '@ant-design/icons';
-import { getBots, createBot, updateBot, deleteBot, reconnectBot } from '../api/bots';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, RobotOutlined, LinkOutlined, KeyOutlined, SafetyOutlined, CopyOutlined, CheckOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { getBots, createBot, updateBot, deleteBot, reconnectBot, getBotTokens, createBotToken, deleteBotToken, getBotContacts } from '../api/bots';
 
 // Helpers
 const statusColor = (status) => {
@@ -23,6 +23,18 @@ export default function BotManage({ user, onBotsChange }) {
   const [editingBot, setEditingBot] = useState(null);
   const [form] = Form.useForm();
   const navigate = useNavigate();
+
+  // ---- Token Management State ----
+  const [tokenModalVisible, setTokenModalVisible] = useState(false);
+  const [tokenBotId, setTokenBotId] = useState(null);
+  const [tokenBotName, setTokenBotName] = useState('');
+  const [tokens, setTokens] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [selectedContact, setSelectedContact] = useState('');
+  const [tokenName, setTokenName] = useState('');
+  const [generatedToken, setGeneratedToken] = useState('');
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [copiedTokenId, setCopiedTokenId] = useState(null);
 
   // ---- Responsive: detect mobile (≤768px) ----
   const [isMobile, setIsMobile] = useState(
@@ -78,6 +90,67 @@ export default function BotManage({ user, onBotsChange }) {
     } catch (err) {
       message.error('删除失败');
     }
+  };
+
+  // ---- Token Management ----
+  const openTokenModal = async (bot) => {
+    setTokenBotId(bot.id);
+    setTokenBotName(bot.name);
+    setSelectedContact('');
+    setTokenName('');
+    setGeneratedToken('');
+    setCopiedTokenId(null);
+    setTokenModalVisible(true);
+    setTokenLoading(true);
+
+    try {
+      const [tokensRes, contactsRes] = await Promise.all([
+        getBotTokens(bot.id),
+        getBotContacts(bot.id),
+      ]);
+      setTokens(tokensRes.data.data || []);
+      setContacts(contactsRes.data.data || []);
+    } catch (err) {
+      message.error('加载Token数据失败');
+    } finally {
+      setTokenLoading(false);
+    }
+  };
+
+  const handleGenerateToken = async () => {
+    if (!selectedContact) {
+      message.warning('请选择联系人');
+      return;
+    }
+    try {
+      const res = await createBotToken(tokenBotId, selectedContact, tokenName);
+      const newToken = res.data.data;
+      setGeneratedToken(newToken.token);
+      setTokens([newToken, ...tokens]);
+      message.success('Token 生成成功');
+    } catch (err) {
+      message.error(err.response?.data?.error || '生成Token失败');
+    }
+  };
+
+  const handleDeleteToken = async (tokenId) => {
+    try {
+      await deleteBotToken(tokenBotId, tokenId);
+      setTokens(tokens.filter(t => t.id !== tokenId));
+      message.success('Token 已删除');
+    } catch (err) {
+      message.error('删除Token失败');
+    }
+  };
+
+  const handleCopyToken = (tokenValue, tokenId) => {
+    navigator.clipboard.writeText(tokenValue).then(() => {
+      setCopiedTokenId(tokenId);
+      setTimeout(() => setCopiedTokenId(null), 2000);
+      message.success('已复制到剪贴板');
+    }).catch(() => {
+      message.error('复制失败');
+    });
   };
 
   const handleReconnect = async (id) => {
@@ -166,6 +239,9 @@ export default function BotManage({ user, onBotsChange }) {
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
+          <Button type="link" size="small" icon={<SafetyOutlined />} onClick={() => openTokenModal(record)}>
+            Token
+          </Button>
           <Button type="link" size="small" icon={<ReloadOutlined />} onClick={() => handleReconnect(record.id)}>
             重连
           </Button>
@@ -245,7 +321,7 @@ export default function BotManage({ user, onBotsChange }) {
               </Typography.Text>
             )}
 
-            {/* Action buttons: full-width at bottom of card */}
+            {/* Action buttons: two rows on mobile */}
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <Button
                 block
@@ -254,6 +330,15 @@ export default function BotManage({ user, onBotsChange }) {
               >
                 编辑
               </Button>
+              <Button
+                block
+                icon={<SafetyOutlined />}
+                onClick={() => openTokenModal(bot)}
+              >
+                Token
+              </Button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <Button
                 block
                 icon={<ReloadOutlined />}
@@ -395,6 +480,161 @@ export default function BotManage({ user, onBotsChange }) {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* ---- Token Management Modal ---- */}
+      <Modal
+        title={`Token 管理 - ${tokenBotName}`}
+        open={tokenModalVisible}
+        onCancel={() => setTokenModalVisible(false)}
+        footer={null}
+        width={isMobile ? '95%' : 600}
+        destroyOnClose
+      >
+        {/* Generate new token section */}
+        <div style={{ marginBottom: 16 }}>
+          <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 12 }}>生成新 Token</Typography.Title>
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Form.Item label="联系人" style={{ marginBottom: 0 }}>
+              <select
+                value={selectedContact}
+                onChange={(e) => setSelectedContact(e.target.value)}
+                style={{
+                  width: '100%',
+                  height: 32,
+                  borderRadius: 6,
+                  border: '1px solid #d9d9d9',
+                  padding: '0 11px',
+                  fontSize: 14,
+                  outline: 'none',
+                  background: '#fff',
+                }}
+              >
+                <option value="">-- 请选择联系人 --</option>
+                {contacts.map((c) => (
+                  <option key={c.userid} value={c.userid}>{c.name} ({c.userid})</option>
+                ))}
+              </select>
+            </Form.Item>
+            <Input
+              placeholder="备注（可选，例如：通知用、告警用）"
+              value={tokenName}
+              onChange={(e) => setTokenName(e.target.value)}
+            />
+            <Button
+              type="primary"
+              icon={<SafetyOutlined />}
+              onClick={handleGenerateToken}
+              block={isMobile}
+            >
+              生成 Token
+            </Button>
+          </Space>
+        </div>
+
+        {/* Generated token display */}
+        {generatedToken && (
+          <Card
+            size="small"
+            style={{
+              marginBottom: 16,
+              border: '1px solid #52c41a',
+              backgroundColor: '#f6ffed',
+            }}
+          >
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              <Typography.Text strong style={{ color: '#52c41a' }}>
+                <CheckOutlined /> Token 已生成
+              </Typography.Text>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: '#fff',
+                padding: '8px 12px',
+                borderRadius: 6,
+                border: '1px solid #d9d9d9',
+                wordBreak: 'break-all',
+                fontFamily: 'SFMono-Regular, Consolas, monospace',
+                fontSize: 12,
+              }}>
+                <Typography.Text copyable style={{ fontSize: 12 }}>{generatedToken}</Typography.Text>
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                请复制并保存 Token，关闭弹窗后将不再完整显示。可在下方列表中重新复制。
+              </Typography.Text>
+            </Space>
+          </Card>
+        )}
+
+        {/* Token list */}
+        <div>
+          <Typography.Title level={5} style={{ marginBottom: 12 }}>已有 Token</Typography.Title>
+          {loading && <Typography.Text type="secondary">加载中...</Typography.Text>}
+          {!tokenLoading && tokens.length === 0 && (
+            <Typography.Text type="secondary">暂无 Token</Typography.Text>
+          )}
+          {tokens.map((t) => (
+            <Card
+              key={t.id}
+              size="small"
+              style={{ marginBottom: 8 }}
+              hoverable
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ marginBottom: 4 }}>
+                    <Typography.Text strong style={{ fontSize: 13 }}>{t.name || '无备注'}</Typography.Text>
+                    <Tag style={{ marginLeft: 8, fontSize: 11 }}>{t.contact_userid}</Tag>
+                  </div>
+                  <div style={{
+                    fontFamily: 'SFMono-Regular, Consolas, monospace',
+                    fontSize: 12,
+                    color: '#595959',
+                    background: '#fafafa',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    wordBreak: 'break-all',
+                    marginBottom: 4,
+                  }}>
+                    ...{t.token.slice(-8)}
+                  </div>
+                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                    创建于 {t.created_at}
+                  </Typography.Text>
+                </div>
+                <Space direction="vertical" size={4}>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={copiedTokenId === t.id ? <CheckOutlined /> : <CopyOutlined />}
+                    onClick={() => handleCopyToken(t.token, t.id)}
+                    style={{ padding: '0 4px' }}
+                  >
+                    {copiedTokenId === t.id ? '已复制' : '复制'}
+                  </Button>
+                  <Popconfirm
+                    title="确定删除此Token？"
+                    description="删除后不可恢复，使用此Token的请求将失败"
+                    onConfirm={() => handleDeleteToken(t.id)}
+                    okText="删除"
+                    cancelText="取消"
+                  >
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      icon={<CloseCircleOutlined />}
+                      style={{ padding: '0 4px' }}
+                    >
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </div>
+            </Card>
+          ))}
+        </div>
       </Modal>
     </div>
   );
