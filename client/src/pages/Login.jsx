@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Form, Input, Button, Card, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined, RobotOutlined } from '@ant-design/icons';
@@ -7,8 +7,15 @@ import { login as loginApi } from '../api/auth';
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const navigate = useNavigate();
+
+  // After login succeeds, navigate to home once auth state is confirmed
+  useEffect(() => {
+    if (user) {
+      navigate('/', { replace: true });
+    }
+  }, [user, navigate]);
 
   const onFinish = async (values) => {
     setLoading(true);
@@ -16,7 +23,7 @@ export default function Login() {
       const res = await loginApi(values.username, values.password);
       const { token, user } = res.data.data;
       login(token, user);
-      navigate('/', { replace: true });
+      // Navigation handled by useEffect above when user state updates
     } catch (err) {
       const msg = err.response?.data?.error || '登录失败';
       message.error(msg);
