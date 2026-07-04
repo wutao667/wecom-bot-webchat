@@ -78,14 +78,14 @@ class BotConnectionPool {
     // ── Lifecycle event handlers ──
     wsClient.on('connected', () => {
       console.log(`[wecomClient] Bot ${bot.id} connected`);
-      botService.updateBotStatus(bot.id, 'connected');
+      botService.updateBotStatus(bot.id, 'connected', null);
       this._pushBotStatus(bot.id, 'connected');
       settle(connectResolve);
     });
 
     wsClient.on('authenticated', () => {
       console.log(`[wecomClient] Bot ${bot.id} authenticated`);
-      botService.updateBotStatus(bot.id, 'connected');
+      botService.updateBotStatus(bot.id, 'connected', null);
       this._pushBotStatus(bot.id, 'connected');
       // Full authentication confirms a valid connection — reset backoff
       this._reconnectAttempts.delete(bot.id);
