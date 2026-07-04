@@ -19,6 +19,12 @@ const messageRoutes = require('./routes/messages');
 const contactRoutes = require('./routes/contacts');
 const tokenRoutes = require('./routes/tokens');
 
+// Prevent crash on unhandled promise rejections (e.g. pending message
+// cancelled by WebSocket disconnect in @wecom/aibot-node-sdk)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[server] Unhandled Rejection:', reason instanceof Error ? reason.message : reason);
+});
+
 async function main() {
   // Initialize database
   console.log('[server] Initializing database...');
