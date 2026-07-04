@@ -91,7 +91,7 @@ function MainLayout({ user, onLogout }) {
   const { message } = AntApp.useApp();
   const navigate = useNavigate();
   const location = useLocation();
-  const { botId } = useParams();
+  const botIdFromUrl = location.pathname.match(/^\/chat\/(\d+)/)?.[1];
   const [bots, setBots] = useState([]);
   const [selectedBot, setSelectedBot] = useState(null);
   const [contacts, setContacts] = useState([]);
@@ -135,13 +135,13 @@ function MainLayout({ user, onLogout }) {
 
   // Set selected bot from URL or first bot
   useEffect(() => {
-    if (botId) {
-      const found = bots.find((b) => String(b.id) === String(botId));
+    if (botIdFromUrl) {
+      const found = bots.find((b) => String(b.id) === String(botIdFromUrl));
       if (found) setSelectedBot(found);
     } else if (bots.length > 0 && !isManagePage) {
       setSelectedBot(bots[0]);
     }
-  }, [bots, botId, isManagePage]);
+  }, [bots, botIdFromUrl, isManagePage]);
 
   // Join bot room on socket when selected bot changes
   useEffect(() => {
